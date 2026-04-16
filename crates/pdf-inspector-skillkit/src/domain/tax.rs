@@ -77,8 +77,52 @@ static_regex!(schedule_c_re, r"(?i)Schedule\s+C.*Profit\s+or\s+Loss");
 static_regex!(schedule_d_re, r"(?i)Schedule\s+D.*Capital\s+Gains");
 static_regex!(schedule_e_re, r"(?i)Schedule\s+E.*Supplemental\s+Income");
 
-fn find_match(re: &Regex, text: &str) -> Option<String> {
-    re.find(text).map(|m| m.as_str().to_string())
+/// One row of the form-detection ladder. Order matters: the first
+/// matching rule wins, so transcript headings (high specificity) come
+/// before bare form-name mentions (lower specificity).
+type Rule = (fn() -> &'static Regex, TaxFormType, f32);
+
+const RULES: &[Rule] = &[
+    (form_1099_composite_re, TaxFormType::Form1099Composite, 1.0),
+    (w2_transcript_re, TaxFormType::W2, 0.95),
+    (int_transcript_re, TaxFormType::Form1099Int, 0.95),
+    (div_transcript_re, TaxFormType::Form1099Div, 0.95),
+    (misc_transcript_re, TaxFormType::Form1099Misc, 0.95),
+    (nec_transcript_re, TaxFormType::Form1099Nec, 0.95),
+    (k1_1065_re, TaxFormType::K1_1065, 1.0),
+    (k1_1120s_re, TaxFormType::K1_1120S, 1.0),
+    (form_w2_re, TaxFormType::W2, 1.0),
+    (wage_tax_statement_re, TaxFormType::W2, 0.9),
+    (form_1099_int_re, TaxFormType::Form1099Int, 1.0),
+    (interest_income_re, TaxFormType::Form1099Int, 0.7),
+    (form_1099_div_re, TaxFormType::Form1099Div, 1.0),
+    (dividends_distributions_re, TaxFormType::Form1099Div, 0.7),
+    (form_1099_misc_re, TaxFormType::Form1099Misc, 1.0),
+    (form_1099_nec_re, TaxFormType::Form1099Nec, 1.0),
+    (nonemployee_comp_re, TaxFormType::Form1099Nec, 0.8),
+    (form_1040_re, TaxFormType::Form1040, 1.0),
+    (individual_income_re, TaxFormType::Form1040, 1.0),
+    (schedule_a_re, TaxFormType::ScheduleA, 1.0),
+    (schedule_c_re, TaxFormType::ScheduleC, 1.0),
+    (schedule_d_re, TaxFormType::ScheduleD, 1.0),
+    (schedule_e_re, TaxFormType::ScheduleE, 1.0),
+];
+
+fn match_rules(search_text: &str) -> TaxFormIdentification {
+    for (re_fn, form_type, confidence) in RULES {
+        if let Some(m) = re_fn().find(search_text) {
+            return TaxFormIdentification {
+                form_type: *form_type,
+                confidence: *confidence,
+                raw_match: m.as_str().to_string(),
+            };
+        }
+    }
+    TaxFormIdentification {
+        form_type: TaxFormType::Unknown,
+        confidence: 0.0,
+        raw_match: String::new(),
+    }
 }
 
 pub fn identify_tax_form(
@@ -87,196 +131,7 @@ pub fn identify_tax_form(
     let info = crate::process(path)?;
     let text = info.markdown.unwrap_or_default();
     let search_text = &text[..text.len().min(5000)];
-
-    if let Some(raw_match) = find_match(form_1099_composite_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Composite,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(w2_transcript_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::W2,
-            confidence: 0.95,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(int_transcript_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Int,
-            confidence: 0.95,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(div_transcript_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Div,
-            confidence: 0.95,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(misc_transcript_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Misc,
-            confidence: 0.95,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(nec_transcript_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Nec,
-            confidence: 0.95,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(k1_1065_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::K1_1065,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(k1_1120s_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::K1_1120S,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(form_w2_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::W2,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(wage_tax_statement_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::W2,
-            confidence: 0.9,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(form_1099_int_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Int,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(interest_income_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Int,
-            confidence: 0.7,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(form_1099_div_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Div,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(dividends_distributions_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Div,
-            confidence: 0.7,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(form_1099_misc_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Misc,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(form_1099_nec_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Nec,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(nonemployee_comp_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1099Nec,
-            confidence: 0.8,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(form_1040_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1040,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(individual_income_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::Form1040,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(schedule_a_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::ScheduleA,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(schedule_c_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::ScheduleC,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(schedule_d_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::ScheduleD,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    if let Some(raw_match) = find_match(schedule_e_re(), search_text) {
-        return Ok(TaxFormIdentification {
-            form_type: TaxFormType::ScheduleE,
-            confidence: 1.0,
-            raw_match,
-        });
-    }
-
-    Ok(TaxFormIdentification {
-        form_type: TaxFormType::Unknown,
-        confidence: 0.0,
-        raw_match: String::new(),
-    })
+    Ok(match_rules(search_text))
 }
 
 #[cfg(test)]
@@ -284,24 +139,12 @@ mod tests {
     use super::*;
 
     fn first_pattern_hit(text: &str) -> (TaxFormType, f32) {
-        // Mirrors the regex ladder in identify_tax_form. Used to lock the
-        // 2026-04-15 validation fixes (TurboTax transcript headings + Form
-        // 1099 Composite) without needing real PDFs.
+        // Mirrors the production ladder so the 2026-04-15 validation
+        // fixes (TurboTax transcript headings + Form 1099 Composite)
+        // can be locked in without real PDFs.
         let search_text = &text[..text.len().min(5000)];
-
-        if find_match(form_1099_composite_re(), search_text).is_some() {
-            return (TaxFormType::Form1099Composite, 1.0);
-        }
-        if find_match(w2_transcript_re(), search_text).is_some() {
-            return (TaxFormType::W2, 0.95);
-        }
-        if find_match(int_transcript_re(), search_text).is_some() {
-            return (TaxFormType::Form1099Int, 0.95);
-        }
-        if find_match(div_transcript_re(), search_text).is_some() {
-            return (TaxFormType::Form1099Div, 0.95);
-        }
-        (TaxFormType::Unknown, 0.0)
+        let id = match_rules(search_text);
+        (id.form_type, id.confidence)
     }
 
     #[test]

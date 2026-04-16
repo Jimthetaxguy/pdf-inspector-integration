@@ -15,7 +15,8 @@ use rmcp::{
     tool, tool_handler, tool_router, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
 
@@ -53,6 +54,29 @@ where
             json_error(format!("tool '{tool}' timed out after 30s"))
         }
     }
+}
+
+/// Common dispatch envelope: log invocation, run with timeout, serialize
+/// success or render error. Captures the boilerplate shared by 8 of the
+/// 9 tool handlers (batch_classify is bespoke — it folds per-item errors
+/// into the response array rather than failing the whole call).
+async fn dispatch<T, E, F>(tool: &'static str, target: impl AsRef<OsStr>, work: F) -> String
+where
+    T: Serialize,
+    E: std::fmt::Display,
+    F: FnOnce() -> Result<T, E>,
+{
+    tracing::debug!(tool, target = ?target.as_ref(), "tool invoked");
+    with_timeout(tool, async move {
+        match work() {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(json_error),
+            Err(e) => {
+                tracing::warn!(tool, error = %e, "tool failed");
+                json_error(e)
+            }
+        }
+    })
+    .await
 }
 
 /// Input for single-path tools (classify, markdown, analyze).
@@ -109,15 +133,9 @@ impl PdfInspectorServer {
     )]
     async fn classify_pdf(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        tracing::debug!(tool = "classify_pdf", path = ?log_name(&path), "tool invoked");
-        with_timeout("classify_pdf", async move {
-            match pdf_inspector_skillkit::classify(&path) {
-                Ok(info) => serde_json::to_string_pretty(&info).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+        let target = log_name(&path);
+        dispatch("classify_pdf", target, move || {
+            pdf_inspector_skillkit::classify(&path)
         })
         .await
     }
@@ -128,15 +146,9 @@ impl PdfInspectorServer {
     )]
     async fn pdf_to_markdown(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        tracing::debug!(tool = "pdf_to_markdown", path = ?log_name(&path), "tool invoked");
-        with_timeout("pdf_to_markdown", async move {
-            match pdf_inspector_skillkit::process(&path) {
-                Ok(info) => serde_json::to_string_pretty(&info).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+        let target = log_name(&path);
+        dispatch("pdf_to_markdown", target, move || {
+            pdf_inspector_skillkit::process(&path)
         })
         .await
     }
@@ -147,20 +159,17 @@ impl PdfInspectorServer {
     )]
     async fn analyze_layout(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        tracing::debug!(tool = "analyze_layout", path = ?log_name(&path), "tool invoked");
-        with_timeout("analyze_layout", async move {
-            match pdf_inspector_skillkit::analyze(&path) {
-                Ok(info) => serde_json::to_string_pretty(&info).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+        let target = log_name(&path);
+        dispatch("analyze_layout", target, move || {
+            pdf_inspector_skillkit::analyze(&path)
         })
         .await
     }
 
     /// Batch classify multiple PDFs sequentially.
+    ///
+    /// Bespoke because per-item errors are folded into the response array
+    /// rather than failing the whole call — so the dispatch helper doesn't fit.
     #[tool(
         description = "Classify multiple PDFs — returns array of {path, classification} objects"
     )]
@@ -199,17 +208,11 @@ impl PdfInspectorServer {
     async fn extract_text_regions(&self, params: Parameters<RegionInput>) -> String {
         let path = params.0.path;
         let regions = params.0.regions;
-        tracing::debug!(tool = "extract_text_regions", path = ?log_name(&path), "tool invoked");
-        with_timeout("extract_text_regions", async move {
+        let target = log_name(&path);
+        dispatch("extract_text_regions", target, move || {
             let page_regions: Vec<(u32, Vec<[f32; 4]>)> =
                 regions.into_iter().map(|r| (r.page, r.rects)).collect();
-            match pdf_inspector_skillkit::extract_text_regions(&path, &page_regions) {
-                Ok(results) => serde_json::to_string_pretty(&results).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+            pdf_inspector_skillkit::extract_text_regions(&path, &page_regions)
         })
         .await
     }
@@ -224,17 +227,11 @@ impl PdfInspectorServer {
     async fn extract_table_regions(&self, params: Parameters<RegionInput>) -> String {
         let path = params.0.path;
         let regions = params.0.regions;
-        tracing::debug!(tool = "extract_table_regions", path = ?log_name(&path), "tool invoked");
-        with_timeout("extract_table_regions", async move {
+        let target = log_name(&path);
+        dispatch("extract_table_regions", target, move || {
             let page_regions: Vec<(u32, Vec<[f32; 4]>)> =
                 regions.into_iter().map(|r| (r.page, r.rects)).collect();
-            match pdf_inspector_skillkit::extract_table_regions(&path, &page_regions) {
-                Ok(results) => serde_json::to_string_pretty(&results).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+            pdf_inspector_skillkit::extract_table_regions(&path, &page_regions)
         })
         .await
     }
@@ -245,15 +242,9 @@ impl PdfInspectorServer {
     )]
     async fn identify_tax_form(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        tracing::debug!(tool = "identify_tax_form", path = ?log_name(&path), "tool invoked");
-        with_timeout("identify_tax_form", async move {
-            match pdf_inspector_skillkit::domain::tax::identify_tax_form(&path) {
-                Ok(result) => serde_json::to_string_pretty(&result).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+        let target = log_name(&path);
+        dispatch("identify_tax_form", target, move || {
+            pdf_inspector_skillkit::domain::tax::identify_tax_form(&path)
         })
         .await
     }
@@ -264,15 +255,9 @@ impl PdfInspectorServer {
     )]
     async fn split_sec_filing(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        tracing::debug!(tool = "split_sec_filing", path = ?log_name(&path), "tool invoked");
-        with_timeout("split_sec_filing", async move {
-            match pdf_inspector_skillkit::domain::sec::split_sec_filing(&path) {
-                Ok(sections) => serde_json::to_string_pretty(&sections).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+        let target = log_name(&path);
+        dispatch("split_sec_filing", target, move || {
+            pdf_inspector_skillkit::domain::sec::split_sec_filing(&path)
         })
         .await
     }
@@ -283,15 +268,9 @@ impl PdfInspectorServer {
     )]
     async fn parse_irc_sections(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        tracing::debug!(tool = "parse_irc_sections", path = ?log_name(&path), "tool invoked");
-        with_timeout("parse_irc_sections", async move {
-            match pdf_inspector_skillkit::domain::irc::parse_irc_sections(&path) {
-                Ok(result) => serde_json::to_string_pretty(&result).unwrap_or_else(json_error),
-                Err(e) => {
-                    tracing::warn!(error = %e, "tool failed");
-                    json_error(e)
-                }
-            }
+        let target = log_name(&path);
+        dispatch("parse_irc_sections", target, move || {
+            pdf_inspector_skillkit::domain::irc::parse_irc_sections(&path)
         })
         .await
     }
