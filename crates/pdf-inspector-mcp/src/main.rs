@@ -10,10 +10,9 @@
 //! the JSON-RPC channel and contaminating it would break the MCP protocol.
 
 use rmcp::{
-    ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -105,7 +104,9 @@ impl PdfInspectorServer {
 #[tool_router]
 impl PdfInspectorServer {
     /// Classify a PDF as TextBased, Scanned, ImageBased, or Mixed.
-    #[tool(description = "Classify a PDF as TextBased/Scanned/ImageBased/Mixed with confidence score and per-page OCR hints")]
+    #[tool(
+        description = "Classify a PDF as TextBased/Scanned/ImageBased/Mixed with confidence score and per-page OCR hints"
+    )]
     async fn classify_pdf(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
         tracing::debug!(tool = "classify_pdf", path = ?log_name(&path), "tool invoked");
@@ -122,7 +123,9 @@ impl PdfInspectorServer {
     }
 
     /// Convert a PDF to clean Markdown.
-    #[tool(description = "Convert a PDF to clean Markdown with headings, tables, lists, and code blocks")]
+    #[tool(
+        description = "Convert a PDF to clean Markdown with headings, tables, lists, and code blocks"
+    )]
     async fn pdf_to_markdown(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
         tracing::debug!(tool = "pdf_to_markdown", path = ?log_name(&path), "tool invoked");
@@ -139,7 +142,9 @@ impl PdfInspectorServer {
     }
 
     /// Analyze layout complexity of a PDF (tables, multi-column, etc.).
-    #[tool(description = "Analyze layout complexity of a PDF — returns tables detected, multi-column indicators, and other layout metrics")]
+    #[tool(
+        description = "Analyze layout complexity of a PDF — returns tables detected, multi-column indicators, and other layout metrics"
+    )]
     async fn analyze_layout(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
         tracing::debug!(tool = "analyze_layout", path = ?log_name(&path), "tool invoked");
@@ -156,26 +161,26 @@ impl PdfInspectorServer {
     }
 
     /// Batch classify multiple PDFs sequentially.
-    #[tool(description = "Classify multiple PDFs — returns array of {path, classification} objects")]
+    #[tool(
+        description = "Classify multiple PDFs — returns array of {path, classification} objects"
+    )]
     async fn batch_classify(&self, params: Parameters<BatchClassifyInput>) -> String {
         let paths = params.0.paths;
         tracing::debug!(tool = "batch_classify", count = paths.len(), "tool invoked");
         with_timeout("batch_classify", async move {
             let results: Vec<serde_json::Value> = paths
                 .into_iter()
-                .map(|path| {
-                    match pdf_inspector_skillkit::classify(&path) {
-                        Ok(info) => serde_json::json!({
+                .map(|path| match pdf_inspector_skillkit::classify(&path) {
+                    Ok(info) => serde_json::json!({
+                        "path": path,
+                        "classification": info
+                    }),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "tool failed");
+                        serde_json::json!({
                             "path": path,
-                            "classification": info
-                        }),
-                        Err(e) => {
-                            tracing::warn!(error = %e, "tool failed");
-                            serde_json::json!({
-                                "path": path,
-                                "error": e.to_string()
-                            })
-                        }
+                            "error": e.to_string()
+                        })
                     }
                 })
                 .collect();
@@ -188,7 +193,9 @@ impl PdfInspectorServer {
     ///
     /// Each region is defined by a page number (0-indexed) and a list of
     /// bounding rectangles `[x1, y1, x2, y2]` in PDF points with top-left origin.
-    #[tool(description = "Extract text from specified rectangular regions of a PDF — returns text per region with OCR hints")]
+    #[tool(
+        description = "Extract text from specified rectangular regions of a PDF — returns text per region with OCR hints"
+    )]
     async fn extract_text_regions(&self, params: Parameters<RegionInput>) -> String {
         let path = params.0.path;
         let regions = params.0.regions;
@@ -211,7 +218,9 @@ impl PdfInspectorServer {
     ///
     /// Similar to extract_text_regions but runs table detection and returns
     /// markdown pipe-tables instead of flat text.
-    #[tool(description = "Extract tables from specified rectangular regions of a PDF as markdown pipe-tables")]
+    #[tool(
+        description = "Extract tables from specified rectangular regions of a PDF as markdown pipe-tables"
+    )]
     async fn extract_table_regions(&self, params: Parameters<RegionInput>) -> String {
         let path = params.0.path;
         let regions = params.0.regions;
@@ -231,7 +240,9 @@ impl PdfInspectorServer {
     }
 
     /// Identify the type of tax form in a PDF (W-2, 1099, K-1, 1040, schedules).
-    #[tool(description = "Identify the type of tax form in a PDF (W-2, 1099, K-1, 1040, schedules)")]
+    #[tool(
+        description = "Identify the type of tax form in a PDF (W-2, 1099, K-1, 1040, schedules)"
+    )]
     async fn identify_tax_form(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
         tracing::debug!(tool = "identify_tax_form", path = ?log_name(&path), "tool invoked");
@@ -248,7 +259,9 @@ impl PdfInspectorServer {
     }
 
     /// Split a SEC 10-K/10-Q filing into sections by Item number.
-    #[tool(description = "Split a SEC 10-K/10-Q filing into sections by Item number — returns array of {name, item_number, content, char_offset}")]
+    #[tool(
+        description = "Split a SEC 10-K/10-Q filing into sections by Item number — returns array of {name, item_number, content, char_offset}"
+    )]
     async fn split_sec_filing(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
         tracing::debug!(tool = "split_sec_filing", path = ?log_name(&path), "tool invoked");
@@ -265,7 +278,9 @@ impl PdfInspectorServer {
     }
 
     /// Parse IRC (Internal Revenue Code) sections from a Title 26 PDF.
-    #[tool(description = "Parse IRC (Internal Revenue Code) sections from a Title 26 PDF — returns structured sections with §numbers, titles, and subsections")]
+    #[tool(
+        description = "Parse IRC (Internal Revenue Code) sections from a Title 26 PDF — returns structured sections with §numbers, titles, and subsections"
+    )]
     async fn parse_irc_sections(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
         tracing::debug!(tool = "parse_irc_sections", path = ?log_name(&path), "tool invoked");
@@ -285,19 +300,15 @@ impl PdfInspectorServer {
 #[tool_handler]
 impl ServerHandler for PdfInspectorServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
-        )
-        .with_instructions(
-            "PDF classification, text extraction, and layout analysis. \
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_instructions(
+                "PDF classification, text extraction, and layout analysis. \
              Fast (~10ms classify, ~200ms extract), offline, no OCR.",
-        )
-        .with_server_info(rmcp::model::Implementation::new(
-            "pdf-inspector-mcp",
-            env!("CARGO_PKG_VERSION"),
-        ))
+            )
+            .with_server_info(rmcp::model::Implementation::new(
+                "pdf-inspector-mcp",
+                env!("CARGO_PKG_VERSION"),
+            ))
     }
 }
 

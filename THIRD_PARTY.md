@@ -19,7 +19,7 @@ dependency is permissively licensed and compatible with that choice.
 2. Record new HEAD SHA
 3. Edit workspace `Cargo.toml` → `rev = "<new-sha>"`
 4. `cargo build --release` in this workspace
-5. Re-run regression corpus (see `assessment.md` §5)
+5. Re-run regression corpus (see [`docs/assessment.md`](docs/assessment.md) §5)
 6. If green: `cargo install --path crates/pdf-inspector-mcp --force`
 7. Update this file with new SHA + date
 

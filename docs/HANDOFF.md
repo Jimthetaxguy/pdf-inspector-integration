@@ -45,7 +45,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion
   | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); tools=[t['name'] for t in d['result']['tools']]; print(f'{len(tools)} tools:'); [print(f'  - {t}') for t in tools]"
 
 # 3. Workspace builds + tests pass + clippy clean
-cd ~/Code/pdf-inspector-integration
+cd <repo-root>
 cargo build
 cargo test
 cargo clippy -- -D warnings
@@ -87,7 +87,7 @@ corpus is CFR Treas Regs) — see Validation results below.
 ## File map — where everything lives
 
 ### Primary workspace
-`~/Code/pdf-inspector-integration/`
+`<repo-root>/`
 
 | Path | Purpose |
 |---|---|
@@ -118,7 +118,7 @@ plus Part 4 (OCR tier) plus spec-review corrections log. This is the
 long-form planning document; SPEC/frameworks/etc are derived from it.
 
 ### Test corpus
-`~/Code/pdf-inspector-integration/test-corpus/`
+`<repo-root>/test-corpus/`
 
 | Path | Contents |
 |---|---|
@@ -130,7 +130,7 @@ long-form planning document; SPEC/frameworks/etc are derived from it.
 | `results/summary.json` | Structured benchmark results |
 
 ### Scripts
-`~/Code/pdf-inspector-integration/scripts/`
+`<repo-root>/scripts/`
 
 | Script | Purpose |
 |---|---|
@@ -337,7 +337,7 @@ SPEC.md §12.3.
 ## Contact / continuity
 
 - **Plan file (long form):** `~/.claude/plans/agile-juggling-waffle.md`
-- **Primary spec:** `~/Code/pdf-inspector-integration/SPEC.md`
+- **Primary spec:** `SPEC.md (in docs/)`
 - **Upstream:** `firecrawl/pdf-inspector` @ SHA `2f23f07f6e38fd341361554c114d1abe36349ce7`
 - **OCR library (for Phase 4.B):** `ocrs-cli` v0.12.2 (installed)
 - **ocrs upstream:** `robertknight/ocrs`
@@ -356,8 +356,8 @@ cd pdf-inspector && git checkout 2f23f07f
 cargo install --path . --bins
 
 # 2. Integration workspace (recreate Cargo.toml + crates from git or from scratch)
-mkdir -p ~/Code/pdf-inspector-integration
-cd ~/Code/pdf-inspector-integration
+mkdir -p <repo-root>
+cd <repo-root>
 # ... (see SPEC.md §12.3 and the current files for exact structure)
 
 # 3. Build + install MCP server
@@ -395,4 +395,4 @@ consolidated docs (SPEC, frameworks) derive from it.
 
 ## One-line status for Ralph Plan integration
 
-> **pdf-inspector integration: 9 MCP tools live, 8 validated against real PDFs (tax 10/12 ✅, SEC 26/~26 ✅, IRC structural mismatch on Treas Reg corpus — needs separate parser). 11 unit tests + cheap regex fixes locked in. OCR (ocrs) research complete, integration deferred to trigger. Next: IRC Treas Reg parser redesign OR F2 routing wire-in. Handoff: `~/Code/pdf-inspector-integration/HANDOFF.md`.**
+> **pdf-inspector integration: 9 MCP tools live, 8 validated against real PDFs (tax 10/12 ✅, SEC 26/~26 ✅, IRC structural mismatch on Treas Reg corpus — needs separate parser). 11 unit tests + cheap regex fixes locked in. OCR (ocrs) research complete, integration deferred to trigger. Next: IRC Treas Reg parser redesign OR F2 routing wire-in. Handoff: `docs/HANDOFF.md`.**

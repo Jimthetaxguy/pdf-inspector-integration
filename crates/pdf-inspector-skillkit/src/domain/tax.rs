@@ -60,12 +60,18 @@ static_regex!(wage_tax_statement_re, r"(?i)Wage\s+and\s+Tax\s+Statement");
 static_regex!(form_1099_int_re, r"(?i)Form\s+1099-INT");
 static_regex!(interest_income_re, r"(?i)Interest\s+Income");
 static_regex!(form_1099_div_re, r"(?i)Form\s+1099-DIV");
-static_regex!(dividends_distributions_re, r"(?i)Dividends\s+and\s+Distributions");
+static_regex!(
+    dividends_distributions_re,
+    r"(?i)Dividends\s+and\s+Distributions"
+);
 static_regex!(form_1099_misc_re, r"(?i)Form\s+1099-MISC");
 static_regex!(form_1099_nec_re, r"(?i)Form\s+1099-NEC");
 static_regex!(nonemployee_comp_re, r"(?i)Nonemployee\s+Compensation");
 static_regex!(form_1040_re, r"(?i)Form\s+1040");
-static_regex!(individual_income_re, r"(?i)U\.S\.\s*Individual\s+Income\s+Tax\s+Return");
+static_regex!(
+    individual_income_re,
+    r"(?i)U\.S\.\s*Individual\s+Income\s+Tax\s+Return"
+);
 static_regex!(schedule_a_re, r"(?i)Schedule\s+A.*Itemized\s+Deductions");
 static_regex!(schedule_c_re, r"(?i)Schedule\s+C.*Profit\s+or\s+Loss");
 static_regex!(schedule_d_re, r"(?i)Schedule\s+D.*Capital\s+Gains");

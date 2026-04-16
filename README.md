@@ -1,5 +1,8 @@
 # pdf-inspector-integration
 
+[![CI](https://github.com/Jimthetaxguy/pdf-inspector-integration/actions/workflows/ci.yml/badge.svg)](https://github.com/Jimthetaxguy/pdf-inspector-integration/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 Rust workspace plus MCP server wrapping the [firecrawl/pdf-inspector](https://github.com/firecrawl/pdf-inspector)
 library for offline, fast PDF classification and extraction, with tax-form,
 IRC, and SEC-filing domain helpers exposed as separate tools.
@@ -10,7 +13,7 @@ IRC, and SEC-filing domain helpers exposed as separate tools.
 partial. Use ground-truth fixtures of your own to confirm fitness for any
 specific workflow.
 
-Validation snapshot (see `HANDOFF.md` for full log):
+Validation snapshot (see [`docs/HANDOFF.md`](docs/HANDOFF.md) for full log):
 
 | Tool | Real-PDF validated? | Notes |
 |---|---|---|
