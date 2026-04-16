@@ -14,7 +14,6 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
-    "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",       # file-level copyleft only — does not contaminate our code
@@ -27,6 +26,7 @@ confidence-threshold = 0.93
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+allow-wildcard-paths = true   # path-based intra-workspace deps are fine
 
 [advisories]
 yanked = "warn"
