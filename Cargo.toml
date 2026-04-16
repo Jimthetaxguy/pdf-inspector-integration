@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pdf-inspector-skillkit",
+    "crates/pdf-inspector-mcp",
+]
+
+[workspace.dependencies]
+pdf-inspector = { git = "https://github.com/firecrawl/pdf-inspector", rev = "2f23f07f6e38fd341361554c114d1abe36349ce7" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"

@@ -1,0 +1,5 @@
+Synthetic test fixture. Personal career artifact removed pre-publication.
+This file held the ground-truth markdown extraction of a narrative
+document. The numeric metrics in `summary.json` reflect
+the original run; the source content was redacted before publishing.
+See CONTRIBUTING.md for fixture standards.

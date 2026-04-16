@@ -1,0 +1,23 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local archives / backups
+*.bak*
+_archive-*/
+
+# Local session/agent state
+.remember/
+
+# Validation outputs (regenerated per run; may contain paths)
+test-corpus/results/*.txt
+!test-corpus/results/.gitkeep
+
+# Local sandbox
+tmp/

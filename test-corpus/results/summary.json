@@ -1,0 +1,42 @@
+[
+  {
+    "sample": "sample-1",
+    "engine": "ocrs",
+    "elapsed_s": 1.891,
+    "chars": 2871,
+    "accuracy_ratio": 0.948,
+    "keyword_recall": 1.0
+  },
+  {
+    "sample": "sample-2",
+    "engine": "ocrs",
+    "elapsed_s": 2.026,
+    "chars": 3471,
+    "accuracy_ratio": 0.588,
+    "keyword_recall": 1.0
+  },
+  {
+    "sample": "sample-3",
+    "engine": "ocrs",
+    "elapsed_s": 1.623,
+    "chars": 2655,
+    "accuracy_ratio": 0.848,
+    "keyword_recall": 1.0
+  },
+  {
+    "sample": "sample-4",
+    "engine": "ocrs",
+    "elapsed_s": 2.023,
+    "chars": 3512,
+    "accuracy_ratio": 0.148,
+    "keyword_recall": 0.97
+  },
+  {
+    "sample": "sample-5",
+    "engine": "ocrs",
+    "elapsed_s": 1.921,
+    "chars": 3526,
+    "accuracy_ratio": 0.899,
+    "keyword_recall": 1.0
+  }
+]

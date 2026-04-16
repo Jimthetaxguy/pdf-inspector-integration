@@ -1,0 +1,7 @@
+Synthetic test fixture placeholder.
+
+The original sample-4.pdf was a personal résumé and was removed
+pre-publication. To regenerate the OCR benchmark, drop any single-page
+text PDF here as `sample-4.pdf` and re-run `scripts/build-scanned-corpus.py`
+followed by `scripts/ocr-bench.py`. The numeric metrics in
+`results/summary.json` reflect the original benchmark run.

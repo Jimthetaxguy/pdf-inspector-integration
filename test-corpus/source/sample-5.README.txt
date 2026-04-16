@@ -1,0 +1,4 @@
+Synthetic test fixture. Personal career artifact removed pre-publication.
+This slot held a narrative document used during the ocrs benchmark. The numeric metrics
+in `summary.json` reflect the original run; the source content was
+redacted before publishing. See CONTRIBUTING.md for fixture standards.

@@ -1,0 +1,21 @@
+[package]
+name = "pdf-inspector-skillkit"
+version = "0.1.0"
+edition = "2021"
+description = "Skillkit library wrapping pdf-inspector with tax/SEC/IRC domain helpers"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Jimthetaxguy/pdf-inspector-integration"
+homepage = "https://github.com/Jimthetaxguy/pdf-inspector-integration"
+readme = "../../README.md"
+keywords = ["pdf", "mcp", "tax", "sec", "extraction"]
+categories = ["text-processing", "command-line-utilities"]
+
+[dependencies]
+pdf-inspector = { workspace = true }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+dirs = "6"
