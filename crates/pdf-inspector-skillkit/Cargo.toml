@@ -2,6 +2,7 @@
 name = "pdf-inspector-skillkit"
 version = "0.1.0"
 edition = "2021"
+publish = false
 description = "Skillkit library wrapping pdf-inspector with tax/SEC/IRC domain helpers"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Jimthetaxguy/pdf-inspector-integration"

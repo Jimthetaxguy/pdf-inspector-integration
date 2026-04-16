@@ -2,6 +2,7 @@
 name = "pdf-inspector-mcp"
 version = "0.1.0"
 edition = "2021"
+publish = false
 description = "MCP server exposing pdf-inspector tools to coding agents"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Jimthetaxguy/pdf-inspector-integration"
