@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 pdf-inspector-skillkit = { path = "../pdf-inspector-skillkit" }
-rmcp = { version = "1.4", features = ["server", "transport-io", "schemars"] }
+rmcp = { version = "1.5", features = ["server", "transport-io", "schemars"] }
 schemars = "1.0"
 tokio = { workspace = true }
 serde = { workspace = true }
