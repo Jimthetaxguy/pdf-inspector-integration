@@ -5,11 +5,11 @@
 
 Rust workspace plus MCP server wrapping the [firecrawl/pdf-inspector](https://github.com/firecrawl/pdf-inspector)
 library for offline, fast PDF classification and extraction, with tax-form,
-IRC, and SEC-filing domain helpers exposed as separate tools.
+IRC, SEC-filing, and Sweet tax-review demo helpers exposed as separate tools.
 
 ## Status
 
-**Alpha.** The 9 MCP tools compile and load; validation against real PDFs is
+**Alpha.** The 13 MCP tools compile and load; validation against real PDFs is
 partial. Use ground-truth fixtures of your own to confirm fitness for any
 specific workflow.
 
@@ -26,6 +26,10 @@ Validation snapshot (see [`docs/HANDOFF.md`](docs/HANDOFF.md) for full log):
 | `identify_tax_form` | Yes (10/12) | Bank-direct 1099-INTs return Unknown — see Known limitations |
 | `parse_irc_sections` | Partial | Counts non-zero on Treas Reg corpus, but section-number capture is wrong format — see CHANGELOG |
 | `split_sec_filing` | Yes (26/~26) | Apple 10-K FY2024, all canonical Items |
+| `list_tax_packages` | Synthetic demo | Lists bundled Sweet demo packages across six tax workflows |
+| `review_tax_package` | Synthetic demo | Runs deterministic checks against bundled structured examples |
+| `compare_line_items` | Synthetic demo | Compares one return value to one source value with tolerance |
+| `render_review_memo` | Synthetic demo | Renders a Markdown memo from structured review findings |
 
 ## Why
 
@@ -46,7 +50,7 @@ parsing for Title 26 PDFs, and SEC 10-K / 10-Q section splitting. These are
 layered as separate MCP tools rather than baked into the core extractor so
 the upstream surface stays clean.
 
-## The 9 tools
+## The 13 tools
 
 | Tool | What it does | Status |
 |---|---|---|
@@ -56,9 +60,13 @@ the upstream surface stays clean.
 | `extract_text_regions` | Text from `[x1,y1,x2,y2]` rectangles | beta |
 | `extract_table_regions` | Tables from rectangles as Markdown pipe-tables | beta |
 | `batch_classify` | Classify many PDFs in one call | beta |
-| `identify_tax_form` | Detect W-2 / 1099 / K-1 / 1040 / schedules | beta |
+| `identify_tax_form` | Detect W-2 / 1099 / K-1 / 1040 / 1065 / 1120 / 1120-S / schedules | beta |
 | `parse_irc_sections` | Section parser for Title 26 IRC PDFs | experimental |
 | `split_sec_filing` | 10-K / 10-Q section splitter by Item number | beta |
+| `list_tax_packages` | List bundled Sweet demo packages | demo |
+| `review_tax_package` | Run deterministic review checks for a bundled package | demo |
+| `compare_line_items` | Compare one return line against one source value | demo |
+| `render_review_memo` | Render a Markdown review memo for a bundled package | demo |
 
 ## Install
 
@@ -109,12 +117,23 @@ printf '%s\n%s\n%s\n' \
   | pdf-inspector-mcp
 ```
 
-The same pattern works for any of the 9 tools. Two more one-liners (drop in
+The same pattern works for any of the 13 tools. Two more one-liners (drop in
 the `printf` block above, replacing the third line):
 
 ```text
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"identify_tax_form","arguments":{"path":"/path/to/W2.pdf"}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"split_sec_filing","arguments":{"path":"/path/to/10-K.pdf"}}}
+```
+
+Sweet demo package tools do not require real PDFs; they use bundled synthetic
+structured data to demonstrate the review layer that would sit behind a
+Harris-style pilot:
+
+```text
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_tax_packages","arguments":{}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"review_tax_package","arguments":{"package_id":"demo_1040_w2_schedule_c"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"compare_line_items","arguments":{"label":"W-2 wages","return_reference":"Form 1040 line 1a","source_reference":"W-2 Box 1","return_amount":84732,"source_amount":87432,"tolerance":0}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"render_review_memo","arguments":{"package_id":"demo_1099_bundle"}}}
 ```
 
 The actual response payload is JSON-encoded inside the standard MCP
@@ -139,9 +158,10 @@ the upstream surface.
         v
   pdf-inspector-skillkit   (facade lib)
    |       |
-   |       +-- domain::tax     (identify_tax_form)
-   |       +-- domain::sec     (split_sec_filing)
-   |       +-- domain::irc     (parse_irc_sections)
+   |       +-- domain::tax      (identify_tax_form)
+   |       +-- domain::sec      (split_sec_filing)
+   |       +-- domain::irc      (parse_irc_sections)
+   |       +-- domain::sweet    (demo review packages + comparisons)
    v
   pdf-inspector             (upstream, SHA-pinned)
 ```
@@ -154,6 +174,7 @@ the upstream surface.
 | Test | `cargo test --workspace` |
 | Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Validate domain tool against a PDF | `cargo run --example validate_domain -- <tax\|irc\|sec> <pdf-path>` |
+| Run Sweet review demo | `cargo run -p pdf-inspector-skillkit --example sweet_review_demo -- demo_1040_w2_schedule_c` |
 
 ## License
 

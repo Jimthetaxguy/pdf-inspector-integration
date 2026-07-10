@@ -13,6 +13,9 @@ pub enum TaxFormType {
     K1_1065,
     K1_1120S,
     Form1040,
+    Form1065,
+    Form1120,
+    Form1120S,
     Form1099Composite,
     ScheduleA,
     ScheduleC,
@@ -72,6 +75,21 @@ static_regex!(
     individual_income_re,
     r"(?i)U\.S\.\s*Individual\s+Income\s+Tax\s+Return"
 );
+static_regex!(form_1065_re, r"(?i)Form\s+1065");
+static_regex!(
+    partnership_income_re,
+    r"(?i)U\.S\.\s*Return\s+of\s+Partnership\s+Income"
+);
+static_regex!(form_1120s_re, r"(?i)Form\s+1120-S");
+static_regex!(
+    s_corp_income_re,
+    r"(?i)U\.S\.\s*Income\s+Tax\s+Return\s+for\s+an\s+S\s+Corporation"
+);
+static_regex!(form_1120_re, r"(?i)Form\s+1120");
+static_regex!(
+    c_corp_income_re,
+    r"(?i)U\.S\.\s*Corporation\s+Income\s+Tax\s+Return"
+);
 static_regex!(schedule_a_re, r"(?i)Schedule\s+A.*Itemized\s+Deductions");
 static_regex!(schedule_c_re, r"(?i)Schedule\s+C.*Profit\s+or\s+Loss");
 static_regex!(schedule_d_re, r"(?i)Schedule\s+D.*Capital\s+Gains");
@@ -102,6 +120,12 @@ const RULES: &[Rule] = &[
     (nonemployee_comp_re, TaxFormType::Form1099Nec, 0.8),
     (form_1040_re, TaxFormType::Form1040, 1.0),
     (individual_income_re, TaxFormType::Form1040, 1.0),
+    (form_1065_re, TaxFormType::Form1065, 1.0),
+    (partnership_income_re, TaxFormType::Form1065, 1.0),
+    (form_1120s_re, TaxFormType::Form1120S, 1.0),
+    (s_corp_income_re, TaxFormType::Form1120S, 1.0),
+    (form_1120_re, TaxFormType::Form1120, 1.0),
+    (c_corp_income_re, TaxFormType::Form1120, 1.0),
     (schedule_a_re, TaxFormType::ScheduleA, 1.0),
     (schedule_c_re, TaxFormType::ScheduleC, 1.0),
     (schedule_d_re, TaxFormType::ScheduleD, 1.0),
@@ -163,6 +187,22 @@ mod tests {
     fn broker_form_1099_composite_matches() {
         let md = "Some preamble\n\n# FORM 1099 COMPOSITE & YEAR-END SUMMARY\n";
         assert_eq!(first_pattern_hit(md), (TaxFormType::Form1099Composite, 1.0));
+    }
+
+    #[test]
+    fn entity_return_forms_match_before_generic_1120() {
+        assert_eq!(
+            first_pattern_hit("Form 1065\nU.S. Return of Partnership Income"),
+            (TaxFormType::Form1065, 1.0)
+        );
+        assert_eq!(
+            first_pattern_hit("Form 1120-S\nU.S. Income Tax Return for an S Corporation"),
+            (TaxFormType::Form1120S, 1.0)
+        );
+        assert_eq!(
+            first_pattern_hit("Form 1120\nU.S. Corporation Income Tax Return"),
+            (TaxFormType::Form1120, 1.0)
+        );
     }
 
     #[test]

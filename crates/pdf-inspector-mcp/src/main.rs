@@ -3,7 +3,8 @@
 //!
 //! Tools: classify_pdf, pdf_to_markdown, analyze_layout, batch_classify,
 //! extract_text_regions, extract_table_regions, identify_tax_form,
-//! split_sec_filing, parse_irc_sections.
+//! split_sec_filing, parse_irc_sections, list_tax_packages,
+//! review_tax_package, compare_line_items, render_review_memo.
 //!
 //! All tool handlers are wrapped in a 30-second timeout to bound worst-case
 //! latency on pathological PDFs. Logs go to stderr — stdout is reserved for
@@ -109,6 +110,31 @@ struct RegionInput {
     path: String,
     /// Regions to extract from, specified as (page, rects) pairs.
     regions: Vec<RegionSpec>,
+}
+
+/// Input for Sweet package review and memo tools.
+#[derive(Deserialize, JsonSchema)]
+struct SweetPackageInput {
+    /// Demo package id, such as `demo_1040_w2_schedule_c`.
+    package_id: String,
+}
+
+/// Input for comparing one return line against one source document line.
+#[derive(Deserialize, JsonSchema)]
+struct SweetCompareLineItemsInput {
+    /// Human-readable label for the comparison.
+    label: String,
+    /// Return form and line reference, such as `Form 1040 line 1a`.
+    return_reference: String,
+    /// Source document reference, such as `W-2 Box 1`.
+    source_reference: String,
+    /// Amount shown on the return. Demo values are whole dollars.
+    return_amount: i64,
+    /// Amount shown on the source document. Demo values are whole dollars.
+    source_amount: i64,
+    /// Allowed absolute difference before the comparison is flagged.
+    #[serde(default)]
+    tolerance: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -274,6 +300,67 @@ impl PdfInspectorServer {
         })
         .await
     }
+
+    /// List built-in Sweet tax review demo packages.
+    #[tool(
+        description = "List built-in Sweet tax review demo packages across 1040, 1120, 1065, 1120-S, K-1, and 1099 workflows"
+    )]
+    async fn list_tax_packages(&self) -> String {
+        dispatch("list_tax_packages", "sweet-demo-packages", || {
+            Ok::<_, std::convert::Infallible>(
+                pdf_inspector_skillkit::domain::sweet::list_tax_packages(),
+            )
+        })
+        .await
+    }
+
+    /// Review a built-in Sweet tax package and return structured findings.
+    #[tool(
+        description = "Run deterministic Sweet tax review checks for a built-in demo package and return structured findings"
+    )]
+    async fn review_tax_package(&self, params: Parameters<SweetPackageInput>) -> String {
+        let package_id = params.0.package_id;
+        let target = package_id.clone();
+        dispatch("review_tax_package", target, move || {
+            pdf_inspector_skillkit::domain::sweet::review_tax_package(&package_id)
+        })
+        .await
+    }
+
+    /// Compare one return line item against one source document value.
+    #[tool(
+        description = "Compare one tax return line against one source document line with an optional tolerance"
+    )]
+    async fn compare_line_items(&self, params: Parameters<SweetCompareLineItemsInput>) -> String {
+        let input = params.0;
+        let target = input.label.clone();
+        dispatch("compare_line_items", target, move || {
+            Ok::<_, std::convert::Infallible>(
+                pdf_inspector_skillkit::domain::sweet::compare_line_items(
+                    pdf_inspector_skillkit::domain::sweet::LineComparisonInput {
+                        label: input.label,
+                        return_reference: input.return_reference,
+                        source_reference: input.source_reference,
+                        return_amount: input.return_amount,
+                        source_amount: input.source_amount,
+                        tolerance: input.tolerance,
+                    },
+                ),
+            )
+        })
+        .await
+    }
+
+    /// Render a Markdown review memo for a built-in Sweet demo package.
+    #[tool(description = "Render a Markdown tax review memo for a built-in Sweet demo package")]
+    async fn render_review_memo(&self, params: Parameters<SweetPackageInput>) -> String {
+        let package_id = params.0.package_id;
+        let target = package_id.clone();
+        dispatch("render_review_memo", target, move || {
+            pdf_inspector_skillkit::domain::sweet::render_review_memo(&package_id)
+        })
+        .await
+    }
 }
 
 #[tool_handler]
@@ -282,7 +369,9 @@ impl ServerHandler for PdfInspectorServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(
                 "PDF classification, text extraction, and layout analysis. \
-             Fast (~10ms classify, ~200ms extract), offline, no OCR.",
+             Fast (~10ms classify, ~200ms extract), offline, no OCR. \
+             Includes Sweet tax-review demo tools for deterministic package \
+             review, line-item comparison, and Markdown memo rendering.",
             )
             .with_server_info(rmcp::model::Implementation::new(
                 "pdf-inspector-mcp",
