@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial Rust workspace with `pdf-inspector-skillkit` library and `pdf-inspector-mcp` server binary
 - 9 MCP tools: `classify_pdf`, `pdf_to_markdown`, `analyze_layout`, `extract_text_regions`, `extract_table_regions`, `batch_classify`, `identify_tax_form`, `parse_irc_sections`, `split_sec_filing`
+- 4 Sweet tax-review demo tools: `list_tax_packages`, `review_tax_package`, `compare_line_items`, `render_review_memo` — deterministic package review, line-item comparison, and Markdown memo rendering over built-in demo packages (1040, 1120, 1065, 1120-S, K-1, 1099 workflows). Bringing the total to 13 MCP tools.
+- `CONTEXT.md` project glossary documenting domain vocabulary and module map
 - Validation runner example (`cargo run --example validate_domain`)
 - Domain modules for tax form identification, IRC section parsing, SEC filing splitting
 - `OnceLock<Regex>` cache for all 32 regexes (compile once, reuse)

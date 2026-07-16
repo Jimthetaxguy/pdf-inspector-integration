@@ -41,40 +41,77 @@ fn log_name(path: &str) -> std::ffi::OsString {
         .unwrap_or_else(|| std::ffi::OsString::from("<unknown>"))
 }
 
-/// Run a tool body with the global 30s timeout. On timeout, return a
-/// structured JSON error string (not a panic) so the rmcp tool schema —
-/// which expects `String` — stays intact.
-async fn with_timeout<F>(tool: &'static str, fut: F) -> String
+/// Run a future with a wall-clock timeout. On timeout, return a structured
+/// JSON error string (not a panic) so the rmcp tool schema — which expects
+/// `String` — stays intact.
+///
+/// `timeout` is a parameter (rather than always reading the `TOOL_TIMEOUT`
+/// constant) so this is unit-testable with a short duration instead of
+/// waiting out the real 30s production timeout.
+///
+/// For this to actually preempt a caller, `fut` must contain a genuine
+/// await point. `tokio::time::timeout` races `fut` against a timer inside
+/// a single task's poll loop — if `fut` never yields (e.g. it runs a
+/// synchronous, CPU-bound closure inline with no `.await`), the executor
+/// can't interleave the timer, so the timeout can never fire until the
+/// work finishes on its own. `dispatch` below avoids this by running
+/// blocking work via `tokio::task::spawn_blocking`, whose `JoinHandle`
+/// await is a real yield point.
+async fn with_timeout<F>(tool: &'static str, timeout: Duration, fut: F) -> String
 where
     F: std::future::Future<Output = String>,
 {
-    match tokio::time::timeout(TOOL_TIMEOUT, fut).await {
+    match tokio::time::timeout(timeout, fut).await {
         Ok(s) => s,
         Err(_) => {
-            tracing::warn!(tool, "tool timed out after 30s");
-            json_error(format!("tool '{tool}' timed out after 30s"))
+            tracing::warn!(tool, ?timeout, "tool timed out");
+            json_error(format!("tool '{tool}' timed out after {timeout:?}"))
         }
     }
 }
 
-/// Common dispatch envelope: log invocation, run with timeout, serialize
-/// success or render error. Captures the boilerplate shared by 8 of the
-/// 9 tool handlers (batch_classify is bespoke — it folds per-item errors
-/// into the response array rather than failing the whole call).
+/// Map a `JoinError` from a `spawn_blocking` task (panic or cancellation)
+/// into the same structured JSON error envelope used elsewhere, so callers
+/// always see `{"error": "..."}` regardless of failure mode.
+fn join_error_to_json(tool: &'static str, err: tokio::task::JoinError) -> String {
+    let reason = if err.is_panic() {
+        "panicked".to_string()
+    } else if err.is_cancelled() {
+        "was cancelled".to_string()
+    } else {
+        err.to_string()
+    };
+    tracing::warn!(tool, error = %reason, "blocking task failed");
+    json_error(format!("tool '{tool}' failed: blocking task {reason}"))
+}
+
+/// Common dispatch envelope: log invocation, run the (CPU-bound,
+/// synchronous) work on tokio's blocking thread pool under the timeout,
+/// serialize success or render error. Captures the boilerplate shared by
+/// 12 of the 13 tool handlers (batch_classify is bespoke — it folds
+/// per-item errors into the response array rather than failing the whole
+/// call).
+///
+/// `work` runs inside `tokio::task::spawn_blocking` rather than inline: it
+/// is CPU-bound and can run for a while on pathological PDFs, and running
+/// it directly on the async executor thread both blocks that worker for
+/// other tasks and — since it has no `.await` inside — starves the
+/// `with_timeout` timer of any point at which it could fire.
 async fn dispatch<T, E, F>(tool: &'static str, target: impl AsRef<OsStr>, work: F) -> String
 where
-    T: Serialize,
-    E: std::fmt::Display,
-    F: FnOnce() -> Result<T, E>,
+    T: Serialize + Send + 'static,
+    E: std::fmt::Display + Send + 'static,
+    F: FnOnce() -> Result<T, E> + Send + 'static,
 {
     tracing::debug!(tool, target = ?target.as_ref(), "tool invoked");
-    with_timeout(tool, async move {
-        match work() {
-            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(json_error),
-            Err(e) => {
+    with_timeout(tool, TOOL_TIMEOUT, async move {
+        match tokio::task::spawn_blocking(work).await {
+            Ok(Ok(v)) => serde_json::to_string_pretty(&v).unwrap_or_else(json_error),
+            Ok(Err(e)) => {
                 tracing::warn!(tool, error = %e, "tool failed");
                 json_error(e)
             }
+            Err(join_err) => join_error_to_json(tool, join_err),
         }
     })
     .await
@@ -202,24 +239,29 @@ impl PdfInspectorServer {
     async fn batch_classify(&self, params: Parameters<BatchClassifyInput>) -> String {
         let paths = params.0.paths;
         tracing::debug!(tool = "batch_classify", count = paths.len(), "tool invoked");
-        with_timeout("batch_classify", async move {
-            let results: Vec<serde_json::Value> = paths
-                .into_iter()
-                .map(|path| match pdf_inspector_skillkit::classify(&path) {
-                    Ok(info) => serde_json::json!({
-                        "path": path,
-                        "classification": info
-                    }),
-                    Err(e) => {
-                        tracing::warn!(error = %e, "tool failed");
-                        serde_json::json!({
+        with_timeout("batch_classify", TOOL_TIMEOUT, async move {
+            let work = move || -> Vec<serde_json::Value> {
+                paths
+                    .into_iter()
+                    .map(|path| match pdf_inspector_skillkit::classify(&path) {
+                        Ok(info) => serde_json::json!({
                             "path": path,
-                            "error": e.to_string()
-                        })
-                    }
-                })
-                .collect();
-            serde_json::to_string_pretty(&results).unwrap_or_else(json_error)
+                            "classification": info
+                        }),
+                        Err(e) => {
+                            tracing::warn!(error = %e, "tool failed");
+                            serde_json::json!({
+                                "path": path,
+                                "error": e.to_string()
+                            })
+                        }
+                    })
+                    .collect()
+            };
+            match tokio::task::spawn_blocking(work).await {
+                Ok(results) => serde_json::to_string_pretty(&results).unwrap_or_else(json_error),
+                Err(join_err) => join_error_to_json("batch_classify", join_err),
+            }
         })
         .await
     }
@@ -399,4 +441,70 @@ async fn main() -> anyhow::Result<()> {
     let service = server.serve(transport).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    /// A blocking closure that sleeps far longer than its timeout must
+    /// still return the `{"error": "... timed out ..."}` envelope promptly,
+    /// rather than hanging until the closure finishes. This is the
+    /// regression test for the fix: `with_timeout` races its future
+    /// against a timer, and that future must contain a real `.await`
+    /// point (here, `spawn_blocking`'s `JoinHandle`) for the timer to
+    /// ever get a chance to win.
+    #[tokio::test]
+    async fn with_timeout_preempts_a_slow_blocking_closure() {
+        let start = Instant::now();
+
+        let result = with_timeout("slow_tool", Duration::from_millis(50), async {
+            match tokio::task::spawn_blocking(|| {
+                std::thread::sleep(Duration::from_millis(200));
+                "should not be observed before the timeout fires".to_string()
+            })
+            .await
+            {
+                Ok(s) => s,
+                Err(e) => join_error_to_json("slow_tool", e),
+            }
+        })
+        .await;
+
+        let elapsed = start.elapsed();
+
+        // The 50ms timeout must win the race against the 200ms blocking
+        // closure — proving the timeout actually preempted rather than
+        // blocking the executor until `work` finished on its own.
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "with_timeout did not preempt the slow closure: took {elapsed:?}"
+        );
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("timeout must return a JSON error envelope");
+        let msg = parsed["error"]
+            .as_str()
+            .expect("envelope must have a string `error` key");
+        assert!(
+            msg.contains("timed out"),
+            "expected a timeout message, got: {msg}"
+        );
+    }
+
+    /// A closure that completes well within the timeout must return its
+    /// own result unaffected — the timeout should not be a false trigger.
+    #[tokio::test]
+    async fn with_timeout_passes_through_fast_work() {
+        let result = with_timeout("fast_tool", Duration::from_millis(200), async {
+            match tokio::task::spawn_blocking(|| "ok".to_string()).await {
+                Ok(s) => s,
+                Err(e) => join_error_to_json("fast_tool", e),
+            }
+        })
+        .await;
+
+        assert_eq!(result, "ok");
+    }
 }
