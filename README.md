@@ -1,6 +1,6 @@
-# pdf-inspector-integration
+# anydoc-enhanced
 
-[![CI](https://github.com/Jimthetaxguy/pdf-inspector-integration/actions/workflows/ci.yml/badge.svg)](https://github.com/Jimthetaxguy/pdf-inspector-integration/actions/workflows/ci.yml)
+[![CI](https://github.com/Jimthetaxguy/anydoc-enhanced/actions/workflows/ci.yml/badge.svg)](https://github.com/Jimthetaxguy/anydoc-enhanced/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 Rust workspace plus MCP server wrapping the [firecrawl/pdf-inspector](https://github.com/firecrawl/pdf-inspector)
@@ -13,19 +13,24 @@ IRC, SEC-filing, and Sweet tax-review demo helpers exposed as separate tools.
 partial. Use ground-truth fixtures of your own to confirm fitness for any
 specific workflow.
 
-Validation snapshot (see [`docs/HANDOFF.md`](docs/HANDOFF.md) for full log):
+The broader Firecrawl AnyDoc integration is planned but is not yet shipped.
+See the [dependency-ordered integration plan](docs/anydoc-integration-plan.md)
+for the verified upstream constraints, architecture, and acceptance gates.
+
+Validation snapshot (see [`docs/HANDOFF.md`](docs/HANDOFF.md) for the current
+public handoff):
 
 | Tool | Real-PDF validated? | Notes |
 |---|---|---|
-| `classify_pdf` | Yes | 98 PDFs, 100% text-based corpus, ~1-10 ms |
-| `pdf_to_markdown` | Yes | 4-page doc in ~11 ms |
+| `classify_pdf` | Public-fixture test | Tracked 4-page U.S. Code PDF |
+| `pdf_to_markdown` | Public-fixture test | Asserts expected Title 26 content |
 | `analyze_layout` | Compile-tested only | No live MCP smoke yet |
 | `extract_text_regions` | Compile-tested only | API verified, no live MCP smoke |
 | `extract_table_regions` | Compile-tested only | API verified, no live MCP smoke |
 | `batch_classify` | Compile-tested only | Loops `classify_pdf` |
-| `identify_tax_form` | Yes (10/12) | Bank-direct 1099-INTs return Unknown — see Known limitations |
-| `parse_irc_sections` | Partial | Counts non-zero on Treas Reg corpus, but section-number capture is wrong format — see CHANGELOG |
-| `split_sec_filing` | Yes (26/~26) | Apple 10-K FY2024, all canonical Items |
+| `identify_tax_form` | Unit-tested | No redistributable positive tax-form fixture yet |
+| `parse_irc_sections` | Partial | Unit coverage exists; richer public corpus remains required |
+| `split_sec_filing` | Unit-tested | No redistributable live-filing fixture yet |
 | `list_tax_packages` | Synthetic demo | Lists bundled Sweet demo packages across six tax workflows |
 | `review_tax_package` | Synthetic demo | Runs deterministic checks against bundled structured examples |
 | `compare_line_items` | Synthetic demo | Compares one return value to one source value with tolerance |
@@ -73,36 +78,31 @@ the upstream surface stays clean.
 ### From source
 
 ```bash
-git clone https://github.com/Jimthetaxguy/pdf-inspector-integration
-cd pdf-inspector-integration
-cargo install --path crates/pdf-inspector-mcp
+git clone https://github.com/Jimthetaxguy/anydoc-enhanced
+cd anydoc-enhanced
+cargo install --locked --path crates/pdf-inspector-mcp
 ```
 
 This places `pdf-inspector-mcp` in your Cargo bin directory (typically
 `~/.cargo/bin/`). To pin a known location, use:
 
 ```bash
-cargo install --root /usr/local --path crates/pdf-inspector-mcp
+cargo install --locked --root /usr/local --path crates/pdf-inspector-mcp
 ```
 
-### Wire into Claude Code
+### Wire into an MCP client
 
-Add an entry to `~/.claude/mcp.json` (or your equivalent MCP-client config):
+For Claude Code, use its CLI so machine-specific paths remain in user-scoped
+configuration rather than this repository:
 
-```json
-{
-  "mcpServers": {
-    "pdf-inspector": {
-      "command": "<HOME>/.cargo/bin/pdf-inspector-mcp",
-      "args": []
-    }
-  }
-}
+```bash
+claude mcp add pdf-inspector --scope user -- "$(command -v pdf-inspector-mcp)"
+claude mcp get pdf-inspector
 ```
 
-Replace `<HOME>/.cargo/bin/pdf-inspector-mcp` with the actual absolute path
-returned by `which pdf-inspector-mcp` after install. If you used
-`cargo install --root /usr/local`, the path is `/usr/local/bin/pdf-inspector-mcp`.
+See Anthropic's current [MCP setup documentation](https://docs.anthropic.com/en/docs/claude-code/mcp).
+Other MCP clients can register the absolute path returned by
+`command -v pdf-inspector-mcp` as a local stdio server.
 
 ## Quick start
 
@@ -126,8 +126,7 @@ the `printf` block above, replacing the third line):
 ```
 
 Sweet demo package tools do not require real PDFs; they use bundled synthetic
-structured data to demonstrate the review layer that would sit behind a
-Harris-style pilot:
+structured data to demonstrate a provider-neutral review layer:
 
 ```text
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_tax_packages","arguments":{}}}
@@ -153,7 +152,7 @@ the upstream surface.
         |
         | JSON-RPC over stdio (MCP)
         v
-  pdf-inspector-mcp        (rmcp 1.4 server)
+  pdf-inspector-mcp        (rmcp 2.2 server)
         |
         v
   pdf-inspector-skillkit   (facade lib)
@@ -170,11 +169,20 @@ the upstream surface.
 
 | Task | Command |
 |---|---|
-| Build | `cargo build --workspace` |
-| Test | `cargo test --workspace` |
-| Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Build | `cargo build --workspace --locked` |
+| Test | `cargo test --workspace --locked` |
+| Lint | `cargo clippy --workspace --all-targets --locked -- -D warnings` |
+| Check candidate text for obvious identifiers | `bash scripts/check-public-hygiene.sh` |
 | Validate domain tool against a PDF | `cargo run --example validate_domain -- <tax\|irc\|sec> <pdf-path>` |
 | Run Sweet review demo | `cargo run -p pdf-inspector-skillkit --example sweet_review_demo -- demo_1040_w2_schedule_c` |
+
+Server logs and handled errors do not include caller-supplied paths or labels.
+Set `PDF_INSPECTOR_MCP_LOG` to one of `off`, `error`, `warn`, `info`, `debug`,
+or `trace` to change this crate's verbosity. Raw `RUST_LOG` directives are
+ignored so dependencies cannot log protocol payloads.
+`batch_classify` retains each supplied `path` in its response to preserve the
+existing correlation schema; use opaque staging filenames when response paths
+are sensitive.
 
 ## License
 
@@ -185,9 +193,9 @@ Dual-licensed under either of:
 
 at your option.
 
-Every transitive dependency is permissively licensed (MIT, Apache-2.0,
-BSD, MPL-2.0 file-level, or Zlib). See [THIRD_PARTY.md](THIRD_PARTY.md)
-for the full audit.
+The resolved dependency graph passes the repository's license policy. See
+[THIRD_PARTY.md](THIRD_PARTY.md) for the dated inventory and selected license
+terms.
 
 ## Contributing
 

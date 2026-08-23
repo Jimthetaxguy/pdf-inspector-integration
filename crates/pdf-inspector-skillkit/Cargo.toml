@@ -5,8 +5,8 @@ edition = "2021"
 publish = false
 description = "Skillkit library wrapping pdf-inspector with tax/SEC/IRC domain helpers"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/Jimthetaxguy/pdf-inspector-integration"
-homepage = "https://github.com/Jimthetaxguy/pdf-inspector-integration"
+repository = "https://github.com/Jimthetaxguy/anydoc-enhanced"
+homepage = "https://github.com/Jimthetaxguy/anydoc-enhanced"
 readme = "../../README.md"
 keywords = ["pdf", "mcp", "tax", "sec", "extraction"]
 categories = ["text-processing", "command-line-utilities"]
@@ -17,6 +17,3 @@ regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-dirs = "6"

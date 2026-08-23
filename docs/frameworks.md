@@ -5,9 +5,10 @@
 Companion docs:
 - [`SPEC.md`](SPEC.md) — capabilities, architecture, sourcing
 - [`assessment.md`](assessment.md) — Part 1 baseline + API surface
-- `~/.claude/plans/agile-juggling-waffle.md` — execution plan
+- [`anydoc-integration-plan.md`](anydoc-integration-plan.md) — current execution plan
 
-> **Shareability.** Safe to share after stripping
+> **Public repository.** Examples and fixtures must be synthetic or
+> redistributable and must not contain PII or private filesystem locations.
 
 ### Purpose
 

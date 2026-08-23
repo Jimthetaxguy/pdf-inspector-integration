@@ -17,28 +17,38 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
-use std::path::Path;
 use std::time::Duration;
 
 /// Per-tool wall-clock cap. Pathological PDFs can spin pdf-inspector for
 /// minutes; bound it so the agent caller can recover.
 const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Accept only a level for this crate. Raw tracing directives are rejected so
+/// callers cannot re-enable dependency logs that may contain MCP arguments.
+fn local_log_level(requested: Option<&str>) -> &'static str {
+    match requested.map(str::trim) {
+        Some(value) if value.eq_ignore_ascii_case("off") => "off",
+        Some(value) if value.eq_ignore_ascii_case("error") => "error",
+        Some(value) if value.eq_ignore_ascii_case("warn") => "warn",
+        Some(value) if value.eq_ignore_ascii_case("info") => "info",
+        Some(value) if value.eq_ignore_ascii_case("debug") => "debug",
+        Some(value) if value.eq_ignore_ascii_case("trace") => "trace",
+        _ => "info",
+    }
+}
+
+fn server_log_filter(requested: Option<&str>) -> tracing_subscriber::EnvFilter {
+    tracing_subscriber::EnvFilter::new(format!(
+        "off,{}={}",
+        env!("CARGO_CRATE_NAME"),
+        local_log_level(requested)
+    ))
+}
+
 /// Render a uniform JSON error envelope. Matches the shape used by the
 /// per-tool error branches so callers see one schema regardless of source.
 fn json_error(msg: impl std::fmt::Display) -> String {
     serde_json::json!({ "error": msg.to_string() }).to_string()
-}
-
-/// Strip the path down to its file name for logging — never log absolute
-/// paths (PII risk: home directory, project layout, customer file names
-/// in some flows).
-fn log_name(path: &str) -> std::ffi::OsString {
-    Path::new(path)
-        .file_name()
-        .map(|s| s.to_os_string())
-        .unwrap_or_else(|| std::ffi::OsString::from("<unknown>"))
 }
 
 /// Run a future with a wall-clock timeout. On timeout, return a structured
@@ -97,13 +107,13 @@ fn join_error_to_json(tool: &'static str, err: tokio::task::JoinError) -> String
 /// it directly on the async executor thread both blocks that worker for
 /// other tasks and — since it has no `.await` inside — starves the
 /// `with_timeout` timer of any point at which it could fire.
-async fn dispatch<T, E, F>(tool: &'static str, target: impl AsRef<OsStr>, work: F) -> String
+async fn dispatch<T, E, F>(tool: &'static str, work: F) -> String
 where
     T: Serialize + Send + 'static,
     E: std::fmt::Display + Send + 'static,
     F: FnOnce() -> Result<T, E> + Send + 'static,
 {
-    tracing::debug!(tool, target = ?target.as_ref(), "tool invoked");
+    tracing::debug!(tool, "tool invoked");
     with_timeout(tool, TOOL_TIMEOUT, async move {
         match tokio::task::spawn_blocking(work).await {
             Ok(Ok(v)) => serde_json::to_string_pretty(&v).unwrap_or_else(json_error),
@@ -196,8 +206,7 @@ impl PdfInspectorServer {
     )]
     async fn classify_pdf(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        let target = log_name(&path);
-        dispatch("classify_pdf", target, move || {
+        dispatch("classify_pdf", move || {
             pdf_inspector_skillkit::classify(&path)
         })
         .await
@@ -209,8 +218,7 @@ impl PdfInspectorServer {
     )]
     async fn pdf_to_markdown(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        let target = log_name(&path);
-        dispatch("pdf_to_markdown", target, move || {
+        dispatch("pdf_to_markdown", move || {
             pdf_inspector_skillkit::process(&path)
         })
         .await
@@ -222,8 +230,7 @@ impl PdfInspectorServer {
     )]
     async fn analyze_layout(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        let target = log_name(&path);
-        dispatch("analyze_layout", target, move || {
+        dispatch("analyze_layout", move || {
             pdf_inspector_skillkit::analyze(&path)
         })
         .await
@@ -276,8 +283,7 @@ impl PdfInspectorServer {
     async fn extract_text_regions(&self, params: Parameters<RegionInput>) -> String {
         let path = params.0.path;
         let regions = params.0.regions;
-        let target = log_name(&path);
-        dispatch("extract_text_regions", target, move || {
+        dispatch("extract_text_regions", move || {
             let page_regions: Vec<(u32, Vec<[f32; 4]>)> =
                 regions.into_iter().map(|r| (r.page, r.rects)).collect();
             pdf_inspector_skillkit::extract_text_regions(&path, &page_regions)
@@ -295,8 +301,7 @@ impl PdfInspectorServer {
     async fn extract_table_regions(&self, params: Parameters<RegionInput>) -> String {
         let path = params.0.path;
         let regions = params.0.regions;
-        let target = log_name(&path);
-        dispatch("extract_table_regions", target, move || {
+        dispatch("extract_table_regions", move || {
             let page_regions: Vec<(u32, Vec<[f32; 4]>)> =
                 regions.into_iter().map(|r| (r.page, r.rects)).collect();
             pdf_inspector_skillkit::extract_table_regions(&path, &page_regions)
@@ -310,8 +315,7 @@ impl PdfInspectorServer {
     )]
     async fn identify_tax_form(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        let target = log_name(&path);
-        dispatch("identify_tax_form", target, move || {
+        dispatch("identify_tax_form", move || {
             pdf_inspector_skillkit::domain::tax::identify_tax_form(&path)
         })
         .await
@@ -323,8 +327,7 @@ impl PdfInspectorServer {
     )]
     async fn split_sec_filing(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        let target = log_name(&path);
-        dispatch("split_sec_filing", target, move || {
+        dispatch("split_sec_filing", move || {
             pdf_inspector_skillkit::domain::sec::split_sec_filing(&path)
         })
         .await
@@ -336,8 +339,7 @@ impl PdfInspectorServer {
     )]
     async fn parse_irc_sections(&self, params: Parameters<PathInput>) -> String {
         let path = params.0.path;
-        let target = log_name(&path);
-        dispatch("parse_irc_sections", target, move || {
+        dispatch("parse_irc_sections", move || {
             pdf_inspector_skillkit::domain::irc::parse_irc_sections(&path)
         })
         .await
@@ -348,7 +350,7 @@ impl PdfInspectorServer {
         description = "List built-in Sweet tax review demo packages across 1040, 1120, 1065, 1120-S, K-1, and 1099 workflows"
     )]
     async fn list_tax_packages(&self) -> String {
-        dispatch("list_tax_packages", "sweet-demo-packages", || {
+        dispatch("list_tax_packages", || {
             Ok::<_, std::convert::Infallible>(
                 pdf_inspector_skillkit::domain::sweet::list_tax_packages(),
             )
@@ -362,8 +364,7 @@ impl PdfInspectorServer {
     )]
     async fn review_tax_package(&self, params: Parameters<SweetPackageInput>) -> String {
         let package_id = params.0.package_id;
-        let target = package_id.clone();
-        dispatch("review_tax_package", target, move || {
+        dispatch("review_tax_package", move || {
             pdf_inspector_skillkit::domain::sweet::review_tax_package(&package_id)
         })
         .await
@@ -375,8 +376,7 @@ impl PdfInspectorServer {
     )]
     async fn compare_line_items(&self, params: Parameters<SweetCompareLineItemsInput>) -> String {
         let input = params.0;
-        let target = input.label.clone();
-        dispatch("compare_line_items", target, move || {
+        dispatch("compare_line_items", move || {
             Ok::<_, std::convert::Infallible>(
                 pdf_inspector_skillkit::domain::sweet::compare_line_items(
                     pdf_inspector_skillkit::domain::sweet::LineComparisonInput {
@@ -397,8 +397,7 @@ impl PdfInspectorServer {
     #[tool(description = "Render a Markdown tax review memo for a built-in Sweet demo package")]
     async fn render_review_memo(&self, params: Parameters<SweetPackageInput>) -> String {
         let package_id = params.0.package_id;
-        let target = package_id.clone();
-        dispatch("render_review_memo", target, move || {
+        dispatch("render_review_memo", move || {
             pdf_inspector_skillkit::domain::sweet::render_review_memo(&package_id)
         })
         .await
@@ -411,7 +410,7 @@ impl ServerHandler for PdfInspectorServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(
                 "PDF classification, text extraction, and layout analysis. \
-             Fast (~10ms classify, ~200ms extract), offline, no OCR. \
+             Local and offline, with no bundled OCR engine. \
              Includes Sweet tax-review demo tools for deterministic package \
              review, line-item comparison, and Markdown memo rendering.",
             )
@@ -425,14 +424,20 @@ impl ServerHandler for PdfInspectorServer {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // CRITICAL: stdout is the MCP JSON-RPC channel. All logs MUST go to stderr
-    // or the protocol breaks. RUST_LOG can override; default is `info`.
+    // or the protocol breaks. Dependency logs stay disabled because protocol
+    // libraries can include full request arguments in debug events. The
+    // validated local level defaults to `info`.
+    let requested_log_level = std::env::var("PDF_INSPECTOR_MCP_LOG").ok();
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
+        .with_env_filter(server_log_filter(requested_log_level.as_deref()))
         .init();
+
+    // The default hook prints panic payloads before `JoinError` mapping can
+    // redact them. Keep the server-side event constant and path-free.
+    std::panic::set_hook(Box::new(|_| {
+        eprintln!("pdf-inspector-mcp: internal panic");
+    }));
 
     tracing::info!("pdf-inspector-mcp starting");
 
@@ -447,6 +452,13 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    #[test]
+    fn log_level_rejects_dependency_filter_directives() {
+        assert_eq!(local_log_level(None), "info");
+        assert_eq!(local_log_level(Some("DEBUG")), "debug");
+        assert_eq!(local_log_level(Some("trace,rmcp=trace")), "info");
+    }
 
     /// A blocking closure that sleeps far longer than its timeout must
     /// still return the `{"error": "... timed out ..."}` envelope promptly,

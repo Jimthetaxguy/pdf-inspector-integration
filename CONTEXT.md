@@ -1,8 +1,8 @@
-# pdf-inspector-integration — project context glossary
+# anydoc-enhanced — project context glossary
 
-**Role:** first-party-active Rust workspace + MCP server for offline PDF intel.  
-**Path:** `/Users/jamespustorino/code/pdf-inspector-integration`  
-**Remote:** `https://github.com/Jimthetaxguy/pdf-inspector-integration.git`  
+**Role:** public Rust workspace + MCP server for offline document intelligence.
+**Path:** repository root (`<repo-root>`)
+**Remote:** `https://github.com/Jimthetaxguy/anydoc-enhanced.git`
 **Branch:** `main`
 
 ## Purpose
@@ -24,6 +24,10 @@ Expose [firecrawl/pdf-inspector](https://github.com/firecrawl/pdf-inspector) ove
 | **Sweet demo package** | Bundled structured tax-review package (list / review / compare / memo tools) |
 | **skillkit** | Library crate with domain modules (`tax`, `irc`, `sec`, `sweet`) |
 | **mcp crate** | `pdf-inspector-mcp` binary exposing tools via rmcp |
+| **AnyDoc candidate** | Firecrawl's native Rust multi-format converter; assessed at `v0.2.3`, not yet a dependency |
+| **parser convergence** | One resolved `pdf-inspector` version shared by the skillkit and AnyDoc; required before integration |
+| **document service** | Planned provider-neutral contract above concrete PDF and AnyDoc adapters |
+| **public fixture** | Redistributable, provenance-recorded test input containing no PII or private source material |
 
 ## Module map
 
@@ -33,6 +37,7 @@ Expose [firecrawl/pdf-inspector](https://github.com/firecrawl/pdf-inspector) ove
 | `crates/pdf-inspector-skillkit/src/domain/` | `tax.rs`, `irc`, `sec`, `sweet` |
 | `crates/pdf-inspector-mcp/` | MCP server binary (`main.rs` tool registration) |
 | `docs/` | Handoff, Sweet demo notes |
+| `docs/anydoc-integration-plan.md` | Dependency-ordered AnyDoc architecture and acceptance gates |
 | `test-corpus/` | Fixtures for validation |
 | `scripts/` | Local helpers |
 
@@ -41,6 +46,7 @@ Expose [firecrawl/pdf-inspector](https://github.com/firecrawl/pdf-inspector) ove
 - PDF parsing via git-pinned `pdf-inspector` (firecrawl) + `lopdf` — **offline**, no cloud OCR default
 - MCP over stdio for Claude/Codex/Cursor/etc.
 - Demo Sweet packages are **synthetic structured examples**, not live client filings
+- AnyDoc is an assessed candidate only; no AnyDoc code path ships yet
 
 ## Verify
 
@@ -64,6 +70,7 @@ CI: GitHub Actions badge on README.
 - Not a general OCR pipeline (use OCR only when classify says Scanned/Mixed and user opts in)
 - Do not commit real client tax PDFs or PII filings into the repo
 - Vendor `pdf-inspector` upstream: reference via git rev; do not push upstream
+- Do not add PII, private corpus paths, user-specific home paths, credentials, or internal planning links to this public repository
 
 ## Cleanup note (2026-07-10)
 

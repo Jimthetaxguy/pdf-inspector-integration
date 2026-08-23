@@ -15,6 +15,29 @@ _archive-*/
 # Local session/agent state
 .remember/
 
+# Credentials and local configuration
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+auth.json
+credentials*.json
+creds*.json
+.secrets/
+
+# Non-redistributable local corpora
+test-corpus/private/
+test-corpus/local/
+
 # Validation outputs (regenerated per run; may contain paths)
 test-corpus/results/*.txt
 !test-corpus/results/.gitkeep

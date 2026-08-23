@@ -1,4 +1,4 @@
-# Contributing to pdf-inspector-integration
+# Contributing to anydoc-enhanced
 
 Thanks for your interest. This project is small and pragmatic; contributions
 that improve real-PDF coverage, fix domain-parser edge cases, or extend the
@@ -7,10 +7,10 @@ MCP surface are all welcome.
 ## Quick start
 
 ```bash
-git clone https://github.com/Jimthetaxguy/pdf-inspector-integration
-cd pdf-inspector-integration
-cargo build --workspace
-cargo test --workspace
+git clone https://github.com/Jimthetaxguy/anydoc-enhanced
+cd anydoc-enhanced
+cargo build --workspace --locked
+cargo test --workspace --locked
 ```
 
 ## Validate against your own PDFs
@@ -27,15 +27,17 @@ cargo run --example validate_domain -- sec /path/to/10-K.pdf
 ## Code standards
 
 - Format: `cargo fmt --all`
-- Lint:   `cargo clippy --workspace --all-targets -- -D warnings`
-- Test:   `cargo test --workspace`
+- Lint:   `cargo clippy --workspace --all-targets --locked -- -D warnings`
+- Test:   `cargo test --workspace --locked`
+- Candidate-text hygiene: `bash scripts/check-public-hygiene.sh`
 
-All three must pass before a PR is merged.
+All four must pass before a PR is merged.
 
 ## PR checklist
 
-- [ ] Tests pass (`cargo test --workspace`)
-- [ ] Clippy clean (`cargo clippy --workspace --all-targets -- -D warnings`)
+- [ ] Tests pass (`cargo test --workspace --locked`)
+- [ ] Clippy clean (`cargo clippy --workspace --all-targets --locked -- -D warnings`)
+- [ ] Candidate-text hygiene check passes (`bash scripts/check-public-hygiene.sh`)
 - [ ] No PII or personal data in test fixtures, commit messages, or logs
 - [ ] CHANGELOG.md updated under `[Unreleased]` if the change is user-facing
 
@@ -43,8 +45,10 @@ All three must pass before a PR is merged.
 
 Never commit a real personal or financial PDF — no W-2s, 1099s, K-1s, bank
 statements, offer letters, or anything with a name, SSN, account number, or
-dollar amount tied to a real person. Use synthetic fixtures (handcrafted PDFs
-or anonymized exports) or redact every identifying field before committing.
+dollar amount tied to a real person. Use fully synthetic fixtures or public
+documents with a recorded redistribution basis. Anonymized or redacted private
+exports are not accepted because residual metadata and re-identification risk
+are difficult to prove absent.
 
-When in doubt, leave the fixture out and reference it via a path in the test
-comment instead.
+When in doubt, leave the fixture out. Validate it locally without recording its
+path, contents, or metadata in source, tests, logs, commits, or pull requests.

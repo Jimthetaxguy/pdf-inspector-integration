@@ -1,28 +1,21 @@
 use pdf_inspector_skillkit::{classify, process, validate_path, PdfInfo, SkillkitError};
+use std::path::PathBuf;
 
-fn find_test_pdf() -> Option<std::path::PathBuf> {
-    for dir in &[
-        dirs::home_dir().unwrap().join("Documents"),
-        dirs::home_dir().unwrap().join("Downloads"),
-    ] {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "pdf") && path.is_file() {
-                    return Some(path);
-                }
-            }
-        }
-    }
-    None
+/// A redistributable U.S. Code fixture tracked in this repository.
+///
+/// Tests must never discover arbitrary documents from a contributor's home
+/// directory: doing so is nondeterministic and can process private files.
+fn public_test_pdf() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test-corpus/source/sample-1.pdf")
 }
 
 #[test]
-#[ignore] // Run with: cargo test -p pdf-inspector-skillkit -- --ignored
 fn test_classify_text_pdf() {
-    let pdf_path = find_test_pdf().expect("No PDF found in ~/Documents or ~/Downloads");
+    let pdf_path = public_test_pdf();
+    assert!(pdf_path.is_file(), "public test fixture is missing");
     let info = classify(&pdf_path).expect("classify failed");
-    assert!(!info.pdf_type.is_empty(), "pdf_type should not be empty");
+    assert_eq!(info.pdf_type, "TextBased");
+    assert_eq!(info.page_count, 4);
 }
 
 #[test]
@@ -32,33 +25,27 @@ fn test_classify_nonexistent() {
 }
 
 #[test]
-#[ignore] // Run with: cargo test -p pdf-inspector-skillkit -- --ignored
 fn test_process_produces_markdown() {
-    let pdf_path = find_test_pdf().expect("No PDF found in ~/Documents or ~/Downloads");
+    let pdf_path = public_test_pdf();
     let info = process(&pdf_path).expect("process failed");
     assert!(info.markdown.is_some(), "markdown should be Some");
+    let markdown = info.markdown.as_deref().unwrap();
     assert!(
-        !info.markdown.as_ref().unwrap().is_empty(),
-        "markdown should be non-empty"
+        markdown.contains("§1398"),
+        "expected public fixture content"
     );
 }
 
 #[test]
-#[ignore] // Run with: cargo test -p pdf-inspector-skillkit -- --ignored
-fn test_validate_path_rejects_oversized() {
-    let pdf_path = find_test_pdf().expect("No PDF found in ~/Documents or ~/Downloads");
+fn test_validate_path_accepts_public_fixture() {
+    let pdf_path = public_test_pdf();
     let result = validate_path(&pdf_path);
     assert!(result.is_ok(), "valid PDF path should pass validation");
 }
 
 #[test]
-#[ignore] // Run with: cargo test -p pdf-inspector-skillkit -- --ignored
 fn test_validate_path_canonicalizes() {
-    let pdf_path = find_test_pdf().expect("No PDF found in ~/Documents or ~/Downloads");
-    let parent = pdf_path.parent().unwrap();
-    let filename = pdf_path.file_name().unwrap();
-    let relative = parent.join(filename);
-    let result = validate_path(&relative).expect("validate_path failed");
+    let result = validate_path(public_test_pdf()).expect("validate_path failed");
     assert!(result.is_absolute(), "should return absolute path");
 }
 

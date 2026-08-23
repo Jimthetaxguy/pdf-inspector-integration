@@ -1,5 +1,5 @@
-# cargo-deny configuration — license enforcement
-# Run: cargo install cargo-deny && cargo deny check licenses
+# cargo-deny configuration — advisories, licenses, bans, and source policy
+# Run: cargo install cargo-deny && cargo deny check advisories licenses bans sources
 
 [graph]
 all-features = false
@@ -11,15 +11,11 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
     "BSD-3-Clause",
-    "ISC",
     "Unicode-3.0",
     "Zlib",
-    "MPL-2.0",       # file-level copyleft only — does not contaminate our code
     "0BSD",
     "Unlicense",
-    "CC0-1.0",
 ]
 confidence-threshold = 0.93
 
@@ -34,4 +30,9 @@ unmaintained = "workspace"
 
 [sources]
 unknown-registry = "deny"
-unknown-git = "allow"   # we pin pdf-inspector + lopdf via git rev
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-git = [
+    "https://github.com/firecrawl/pdf-inspector",
+    "https://github.com/J-F-Liu/lopdf",
+]

@@ -132,7 +132,10 @@ pub struct ReviewMemo {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SweetReviewError {
-    #[error("unknown Sweet demo package: {0}")]
+    /// Original package ID retained for programmatic diagnostics. Its
+    /// `Display` representation is deliberately input-free for MCP and log
+    /// safety.
+    #[error("unknown Sweet demo package")]
     UnknownPackage(String),
 }
 
@@ -234,11 +237,11 @@ pub fn review_tax_package(package_id: &str) -> Result<ReviewMemo, SweetReviewErr
         skipped_checks: vec![
             "Source PDF parsing is represented by synthetic structured values in this demo."
                 .to_string(),
-            "Prior-year comparison is package-specific until Harris sample returns are available."
+            "Prior-year comparison is package-specific until approved synthetic fixtures are available."
                 .to_string(),
         ],
         next_steps: vec![
-            "Validate the same checks against sanitized Harris exports.".to_string(),
+            "Validate the same checks against privacy-safe, redistributable fixtures.".to_string(),
             "Replace synthetic line items with parsed values from identify_tax_form + region extraction."
                 .to_string(),
             "Capture reviewer dispositions for confirmed / false positive / follow-up.".to_string(),
@@ -731,7 +734,11 @@ mod tests {
 
     #[test]
     fn unknown_package_errors() {
-        let err = review_tax_package("missing").unwrap_err();
-        assert!(err.to_string().contains("unknown Sweet demo package"));
+        let supplied = "sensitive-caller-label";
+        let err = review_tax_package(supplied).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(&err, SweetReviewError::UnknownPackage(_)));
+        assert_eq!(message, "unknown Sweet demo package");
+        assert!(!message.contains(supplied));
     }
 }

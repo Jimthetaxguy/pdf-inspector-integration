@@ -3,11 +3,11 @@
 This repo now includes a thin, deterministic Sweet review layer on top of the
 existing PDF inspection primitives.
 
-The goal is not to claim production tax-review coverage. The goal is to make the
-Harris pilot architecture concrete:
+The goal is not to claim production tax-review coverage. The goal is to make a
+provider-neutral review architecture concrete:
 
 1. Use `identify_tax_form`, markdown extraction, and region extraction to turn
-   Harris PDF exports into structured facts.
+   privacy-safe PDF fixtures into structured facts.
 2. Feed those facts into deterministic review checks.
 3. Return structured findings and a reviewer-ready memo through MCP.
 
@@ -91,6 +91,6 @@ review layer. The extraction layer is already present in the existing tools:
 - `extract_text_regions`
 - `extract_table_regions`
 
-The Harris-specific next step is to replace synthetic values with facts parsed
-from sanitized Harris exports, then lock each parser path with fixtures and
-reviewer-confirmed expected findings.
+The next step is to replace synthetic values with facts parsed from
+redistributable fixtures, then lock each parser path with reviewer-confirmed
+expected findings.

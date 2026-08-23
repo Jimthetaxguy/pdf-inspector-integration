@@ -2,15 +2,34 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: ["**"]
+
+permissions:
+  contents: read
+  pull-requests: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
+  secrets:
+    name: candidate-text hygiene + gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check candidate text for obvious private identifiers
+        run: bash scripts/check-public-hygiene.sh
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
   test:
     name: test (stable / ubuntu-latest)
     runs-on: ubuntu-latest
@@ -25,17 +44,19 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all -- --check
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: cargo build (release)
-        run: cargo build --workspace --release
+        run: cargo build --workspace --release --locked
 
   deny:
-    name: cargo-deny (licenses + advisories)
+    name: cargo-deny (advisories + licenses + bans + sources)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check licenses bans
+          arguments: --all-features --locked
+          command: check
+          command-arguments: advisories licenses bans sources

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidated the `anyhow`, `serde_json`, `thiserror`, `regex`, and `tokio`
+  lockfile updates after a live review of PRs #14-#18; `thiserror` advances to
+  2.0.20 because the proposed 2.0.19 update is already superseded.
+- Replaced home-directory PDF discovery in integration tests with a tracked,
+  redistributable U.S. Code fixture.
+- Updated repository identity and documentation for `anydoc-enhanced`, and
+  added a dependency-ordered Firecrawl AnyDoc integration plan. AnyDoc remains
+  planned and is not yet a runtime dependency.
+- Limited feature-branch CI to the pull-request event so the same jobs are not
+  duplicated by both `push` and `pull_request`.
+
+### Security
+- Updated transitive `crossbeam-epoch` to 0.9.20 to resolve
+  `RUSTSEC-2026-0204`.
+- Expanded CI policy enforcement to run cargo-deny advisory, license, ban, and
+  source checks; added a candidate-text obvious-identifier guard and Gitleaks;
+  and added ignore rules for credentials and local/private test corpora.
+- Removed identifying pilot references, machine-specific paths, and
+  non-reproducible private-source benchmark rows from the tracked public tree.
+- Redacted caller-supplied paths and labels from MCP errors and stderr logs,
+  disabled dependency protocol-payload logging, and documented the
+  backward-compatible `batch_classify` path echo explicitly.
+
 ### Added
 - Initial Rust workspace with `pdf-inspector-skillkit` library and `pdf-inspector-mcp` server binary
 - 9 MCP tools: `classify_pdf`, `pdf_to_markdown`, `analyze_layout`, `extract_text_regions`, `extract_table_regions`, `batch_classify`, `identify_tax_form`, `parse_irc_sections`, `split_sec_filing`
@@ -15,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validation runner example (`cargo run --example validate_domain`)
 - Domain modules for tax form identification, IRC section parsing, SEC filing splitting
 - `OnceLock<Regex>` cache for all 32 regexes (compile once, reuse)
-- `tracing` to stderr (stdout reserved for JSON-RPC), filename-only path logging
+- Path-free server tracing to stderr (stdout reserved for JSON-RPC)
 - 30s `tokio::time::timeout` per tool handler
 - Crates.io metadata (`description`, `license`, `repository`, `keywords`, `categories`)
 - Dual MIT / Apache-2.0 licensing
