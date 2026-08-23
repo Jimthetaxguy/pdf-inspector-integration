@@ -38,7 +38,7 @@ MCP handlers and domain modules must depend on the skillkit boundary.
 | `crates/pdf-inspector-skillkit/src/lib.rs` | PDF facade, validation, and serialized result types |
 | `crates/pdf-inspector-skillkit/src/domain/` | Tax, IRC, SEC, and synthetic review logic |
 | `crates/pdf-inspector-mcp/src/main.rs` | MCP schemas, tool registration, dispatch, and timeout response handling |
-| `scripts/check-public-hygiene.sh` | Tracked-text PII/path guard used locally and in CI |
+| `scripts/check-public-hygiene.sh` | Candidate-text obvious-identifier heuristic used locally and in CI |
 | `test-corpus/README.md` | Public fixture provenance and contributor gate |
 | `docs/dependency-pr-review-2026-08-22.md` | Live review of dependency PRs #14–#18 |
 | `docs/anydoc-integration-plan.md` | Authoritative dependency-ordered AnyDoc plan |
