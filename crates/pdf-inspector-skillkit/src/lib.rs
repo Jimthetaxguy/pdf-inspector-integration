@@ -80,10 +80,12 @@ pub mod domain;
 /// Errors from the facade layer.
 #[derive(Debug, thiserror::Error)]
 pub enum SkillkitError {
-    #[error("PDF processing error: {0}")]
+    #[error("PDF processing failed")]
     PdfError(#[from] pdf_inspector::PdfError),
 
-    #[error("File not found or inaccessible: {0}")]
+    /// Original path retained for programmatic diagnostics. Its `Display`
+    /// representation is deliberately path-free for MCP and log safety.
+    #[error("File not found or inaccessible")]
     FileNotFound(String),
 
     #[error("File exceeds size limit ({size_bytes} > {limit_bytes})")]
@@ -185,7 +187,11 @@ mod tests {
 
     #[test]
     fn validate_path_rejects_missing_file() {
-        let result = validate_path("/nonexistent/file.pdf");
-        assert!(matches!(result, Err(SkillkitError::FileNotFound(_))));
+        let supplied = "sensitive-document-name.pdf";
+        let error = validate_path(supplied).unwrap_err();
+        let message = error.to_string();
+        assert!(matches!(&error, SkillkitError::FileNotFound(_)));
+        assert_eq!(message, "File not found or inaccessible");
+        assert!(!message.contains(supplied));
     }
 }

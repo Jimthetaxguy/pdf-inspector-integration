@@ -1,5 +1,3 @@
-Synthetic test fixture. Real resume removed pre-publication.
-This file held the ground-truth markdown extraction of a personal
-résumé. The numeric metrics in `summary.json` reflect the original
-benchmark run; the source content was redacted before publishing.
-See CONTRIBUTING.md for fixture standards.
+Public-fixture placeholder. No ground truth is distributed for this slot.
+Add ground truth only after a synthetic or redistributable source fixture is
+recorded in the corpus manifest. See CONTRIBUTING.md for fixture standards.

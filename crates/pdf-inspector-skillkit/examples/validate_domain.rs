@@ -19,7 +19,7 @@ fn main() {
     let tool = args[1].as_str();
     let path = &args[2];
 
-    println!("--- {tool} :: {path}", path = redact_home(path));
+    println!("--- {tool} :: <document>");
 
     match tool {
         "tax" => run_tax(path),
@@ -93,14 +93,4 @@ fn truncate(s: &str, max: usize) -> String {
         let head: String = cleaned.chars().take(max).collect();
         format!("{head}…")
     }
-}
-
-fn redact_home(path: &str) -> String {
-    if let Some(home) = dirs::home_dir() {
-        let home_str = home.to_string_lossy().to_string();
-        if let Some(rest) = path.strip_prefix(&home_str) {
-            return format!("~{rest}");
-        }
-    }
-    path.to_string()
 }

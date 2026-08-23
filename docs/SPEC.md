@@ -1,13 +1,13 @@
 # PDF stack integration — capabilities & plan spec
 
-<!-- STATUS: PARTIAL — Part 1 baseline complete; Parts 2–3 scoped, not built. -->
+<!-- STATUS: PARTIAL — 13-tool PDF/domain MCP baseline built; broader framework and AnyDoc phases planned. -->
 
 Companion docs:
 - [`assessment.md`](assessment.md) — Part 1 install + API inventory + baseline benchmark
-- [`~/.claude/plans/agile-juggling-waffle.md`](../../.claude/plans/agile-juggling-waffle.md) — three-part execution plan
+- [`anydoc-integration-plan.md`](anydoc-integration-plan.md) — current multi-format integration plan
 
-> **Shareability.** Generic content is safe to share with a colleague.
-> Anything personal to **the user** or **the household** is fenced in
+> **Public repository.** Keep this specification repository-relative and free
+> of PII, private corpus locations, credentials, and local agent configuration.
 
 5. **Shoebox triage.** Batch-classify a folder of mixed tax documents;
    route scanned → OCR tier, text → extract; dedupe by **SHA-256 of
@@ -65,7 +65,7 @@ Companion docs:
 ```
 Layer 4  Cross-agent skill mirrors   (Claude / Codex / OpenCode / Cursor / Gemini)
 Layer 3  Rust MCP server             (pdf-inspector-mcp  ← rmcp)
-Layer 2  Claude Code plugin + skill  (~/.claude/plugins + ~/.claude/skills)
+Layer 2  Optional client-specific skill distribution (outside this repository)
 Layer 1  Global CLI                  (pdf2md, detect-pdf, dump_ops — installed Part 1)
 ```
 
@@ -123,7 +123,7 @@ PDF ─► facade ─► primitives (TextItems, PdfRects, markdown)
                │ • pdf-scanned-heuristics    │  ← priority 1
                │ • pdf-sec-filings           │  ← priority 4
                │ • pdf-contract-extract      │
-               │ • pdf-receipt-extract  <PERSONAL>
+               │ • pdf-receipt-extract  <LOCAL-ONLY>
                └─────────────┬───────────────┘
                              ▼
                  enriched, domain-typed output
@@ -131,7 +131,7 @@ PDF ─► facade ─► primitives (TextItems, PdfRects, markdown)
 
 No post-processor ever modifies upstream source. Each lands as:
 - one module in `crates/pdf-inspector-skillkit/src/domain/`
-- one `SKILL.md` in `~/.claude/skills/` (mirrored cross-agent)
+- one optional client skill distributed outside this repository
 - one MCP tool exposed by `pdf-inspector-mcp`
 - a golden-file test with a fixture PDF
 
@@ -245,7 +245,7 @@ above with domain knowledge:
 |---|---|---|
 | Upstream pdf-inspector breaking changes | Build breaks after `cargo update` | SHA-pinned; updates are deliberate; regression suite on bump |
 | lopdf feature assumptions (§2.2) unverified | Write tools may not work on chosen fork | Ship per-feature compile + unit test before releasing the tool |
-| Path edge cases (special chars) | Parse failure (seen 1x in 20-PDF sweep) | `canonicalize()` at MCP boundary |
+| Path edge cases (special chars) | Parse failure in the historical, non-reproducible 20-PDF sweep | `canonicalize()` at MCP boundary |
 | Large PDFs blowing memory | OOM on >50 MB | Input-size cap at MCP boundary |
 | Scanned PDFs misrouted | Downstream OCR skipped | `pages_needing_ocr` + chain to `PDF Tools MCP` on Scanned/Mixed |
 | Table-detection gap vs OCR engines | Weak on heavily formatted tables | `pdf-financial-tables` post-processor (Part 3) |
@@ -258,14 +258,15 @@ above with domain knowledge:
 
 Each part has a concrete gate before proceeding:
 
-**Part 1 gate (PASSED):** binaries installed, 20-PDF sweep clean,
-assessment written.
+**Part 1 historical gate:** binaries were installed and the 20-PDF research
+sweep completed, but its source set is not retained and it is not current
+release evidence.
 
 **Part 2.3a gate:** `cargo build` green on workspace skeleton + empty
 MCP binary that prints its (empty) tool manifest.
 
-**Part 2.3b gate:** each read-group tool passes its smoke test (same
-corpus as Part 1) invoked via MCP, not CLI.
+**Part 2.3b gate:** each read-group tool passes its smoke test against the
+tracked public corpus, invoked via MCP rather than CLI.
 
 **Part 2.4 gate:** skill activates on test prompts in a fresh Claude
 Code session ("classify this pdf"); `framework-health` PASSes on MCP
@@ -293,7 +294,7 @@ consumer project's CLAUDE.md references the new skill.
    results or return all-at-once? Lean: stream, so large batches don't
    block.
 4. **Which corpus to stratify for Part 3 evaluation?** Part 1 used a
-   quick personal sample; Part 3 needs a 40-doc stratified corpus
+   small unstratified sample; Part 3 needs a public stratified corpus
    (SEC / scanned / tax-form / mixed × 10 each). Sourcing TBD.
 5. **Do we mirror skills into Codex / OpenCode / Cursor / Gemini
    simultaneously or Claude-first then propagate?** Lean: Claude-first
@@ -329,17 +330,16 @@ directory as the upstream CLI binaries (`pdf2md`, `detect-pdf`).
 
 ### 12.2 MCP registration
 
-`~/.mcp.json` entry uses an absolute path:
-```json
-{
-  "mcpServers": {
-    "pdf-inspector": {
-      "command": "<HOME>/.cargo/bin/pdf-inspector-mcp",
-      "args": []
-    }
-  }
-}
+For Claude Code, register the absolute binary path through the supported CLI:
+
+```bash
+claude mcp add pdf-inspector --scope user -- "$(command -v pdf-inspector-mcp)"
+claude mcp get pdf-inspector
 ```
+
+Project-scoped Claude Code configuration belongs in `<repo>/.mcp.json`; user
+and local scopes must remain outside this public repository.
+
 If the binary isn't built, the MCP client should surface a clear startup
 error ("binary not found at …"). The skill `SKILL.md` documents the
 install prerequisite so agents can self-diagnose.
@@ -358,15 +358,17 @@ Rollback: revert the `rev` line and `cargo install` again.
 
 ### 12.4 Logging & debugging
 
-Set `RUST_LOG` for granular diagnostics:
+Set the MCP crate's validated log level without enabling dependency payload
+logging:
+
 ```bash
-RUST_LOG=pdf_inspector::detector=debug pdf-inspector-mcp
-RUST_LOG=pdf_inspector::tables=debug pdf-inspector-mcp
-RUST_LOG=pdf_inspector::extractor::layout=debug pdf-inspector-mcp
+PDF_INSPECTOR_MCP_LOG=debug pdf-inspector-mcp
 ```
 
-MCP server logs to stderr (standard rmcp convention); clients capture
-and surface this in their debug output.
+Accepted levels are `off`, `error`, `warn`, `info`, `debug`, and `trace`.
+Raw `RUST_LOG` directives are ignored because protocol and parser dependency
+events can contain caller-controlled arguments. The MCP server logs its own
+path-free events to stderr; clients may capture and surface that stream.
 
 ---
 

@@ -4,10 +4,15 @@
 
 Date: 2026-04-15
 Upstream pin: `firecrawl/pdf-inspector@2f23f07f` (2026-04-14)
-Clone path (read-only): `~/code/third_party/pdf-inspector`
-Integration workspace: `~/code/pdf-inspector-integration` (this dir)
+Upstream reference: official Firecrawl repository at the pinned revision
+Integration workspace: this repository
 
-> Shareability: this file is safe to share. Personal corpus paths are
+> Public artifact: only aggregate results are retained. Do not add private
+> corpus paths or identifying source-document details.
+
+> Historical evidence boundary: the 20-file source set was not retained, so
+> the metrics below are research context, not current release evidence. The
+> reproducible public baseline lives in [`test-corpus/`](../test-corpus/).
 
 ### 5.2 Results
 
@@ -67,7 +72,7 @@ Ordered by expected Part-3 value:
 ## 7. Part 1 deliverables — status
 
 - [x] Binaries installed and on PATH
-- [x] Upstream clone at `~/Code/third_party/pdf-inspector` (read-only)
+- [x] Upstream revision inspected from the official repository
 - [x] API surface inventoried
 - [x] Dependency tree captured
 - [x] Extension points documented
