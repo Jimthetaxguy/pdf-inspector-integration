@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "contract": "epub3-containment-qualification-v1",
+  "fixtures": [
+    {
+      "path": "public-spine-order.epub",
+      "disposition": "complete",
+      "expected_flags": [],
+      "markers": [
+        "EPUB-C01-BEGIN",
+        "EPUB-H1-SCOPE",
+        "EPUB-C01-END",
+        "EPUB-C02-BEGIN",
+        "EPUB-LIST-01",
+        "EPUB-LIST-02",
+        "EPUB-TABLE-FIELD",
+        "EPUB-TABLE-42",
+        "EPUB-C02-END",
+        "EPUB-C03-BEGIN",
+        "EPUB-INTERNAL-LINK",
+        "EPUB-IMAGE-ALT",
+        "EPUB-C03-END"
+      ],
+      "spine_order": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "path": "missing-spine-chapter.epub",
+      "disposition": "incomplete_conversion",
+      "expected_flags": [
+        "missing_required_content"
+      ]
+    },
+    {
+      "path": "malformed-spine-chapter.epub",
+      "disposition": "incomplete_conversion",
+      "expected_flags": [
+        "missing_required_content"
+      ]
+    },
+    {
+      "path": "nav-spine-mismatch.epub",
+      "disposition": "incomplete_conversion",
+      "expected_flags": [
+        "missing_required_content"
+      ]
+    },
+    {
+      "path": "missing-local-resource.epub",
+      "disposition": "incomplete_conversion",
+      "expected_flags": [
+        "missing_required_content"
+      ]
+    },
+    {
+      "path": "external-reference.epub",
+      "disposition": "incomplete_conversion",
+      "expected_flags": [
+        "external_relationships"
+      ]
+    },
+    {
+      "path": "active-content.epub",
+      "disposition": "active_content_disabled",
+      "expected_flags": [
+        "active_content"
+      ]
+    },
+    {
+      "path": "hidden-content.epub",
+      "disposition": "incomplete_conversion",
+      "expected_flags": [
+        "hidden_content"
+      ]
+    },
+    {
+      "path": "encrypted.epub",
+      "disposition": "encrypted",
+      "expected_flags": []
+    },
+    {
+      "path": "archive-amplification.epub",
+      "disposition": "resource_limit",
+      "expected_flags": []
+    }
+  ]
+}

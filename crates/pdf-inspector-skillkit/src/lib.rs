@@ -75,6 +75,7 @@ impl From<pdf_inspector::PageRegionResult> for PageRegionResultOutput {
     }
 }
 
+pub mod document;
 pub mod domain;
 
 /// Errors from the facade layer.

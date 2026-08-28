@@ -4,7 +4,7 @@
 //! Tools: classify_pdf, pdf_to_markdown, analyze_layout, batch_classify,
 //! extract_text_regions, extract_table_regions, identify_tax_form,
 //! split_sec_filing, parse_irc_sections, list_tax_packages,
-//! review_tax_package, compare_line_items, render_review_memo.
+//! review_tax_package, compare_line_items, render_review_memo, document_capabilities, classify_document, document_to_markdown.
 //!
 //! All tool handlers are wrapped in a 30-second timeout to bound worst-case
 //! latency on pathological PDFs. Logs go to stderr — stdout is reserved for
@@ -127,11 +127,73 @@ where
     .await
 }
 
+fn document_json_error(error: &pdf_inspector_skillkit::document::DocumentError) -> String {
+    let mut value = serde_json::json!({
+        "error": error.to_string(),
+        "code": error.code(),
+    });
+    if let pdf_inspector_skillkit::document::DocumentError::OcrRequired { pages } = error {
+        value["pages"] = serde_json::json!(pages);
+    }
+    value.to_string()
+}
+
+async fn dispatch_document<T, F, Fut>(tool: &'static str, work: F) -> String
+where
+    T: Serialize,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, pdf_inspector_skillkit::document::DocumentError>>,
+{
+    tracing::debug!(tool, "tool invoked");
+    match tokio::time::timeout(TOOL_TIMEOUT, work()).await {
+        Ok(Ok(value)) => serde_json::to_string_pretty(&value).unwrap_or_else(json_error),
+        Ok(Err(error)) => {
+            tracing::warn!(tool, error = %error, "tool failed");
+            document_json_error(&error)
+        }
+        Err(_) => {
+            tracing::warn!(tool, "document tool timed out");
+            serde_json::json!({
+                "error": format!("tool {tool} timed out after {TOOL_TIMEOUT:?}"),
+                "code": "worker_timeout",
+            })
+            .to_string()
+        }
+    }
+}
+
+async fn dispatch_document_sync<T, F>(tool: &'static str, work: F) -> String
+where
+    T: Serialize + Send + 'static,
+    F: FnOnce() -> Result<T, pdf_inspector_skillkit::document::DocumentError> + Send + 'static,
+{
+    dispatch_document(tool, move || async move {
+        tokio::task::spawn_blocking(work)
+            .await
+            .map_err(|_| pdf_inspector_skillkit::document::DocumentError::ConversionFailed)?
+    })
+    .await
+}
+
 /// Input for single-path tools (classify, markdown, analyze).
 #[derive(Deserialize, JsonSchema)]
 struct PathInput {
     /// Absolute or relative path to the PDF file.
     path: String,
+}
+
+/// Input for generic document classification and conversion.
+#[derive(Deserialize, JsonSchema)]
+struct DocumentPathInput {
+    /// Absolute or relative path to a local document.
+    path: String,
+}
+
+/// Input for the generic document capability declaration.
+#[derive(Deserialize, JsonSchema)]
+struct DocumentCapabilitiesInput {
+    /// Stable format name, such as `docx`, `pdf`, `pptx`, `xlsx`, `ods`, `odt`, or `epub`.
+    kind: String,
 }
 
 /// Input for batch_classify tool.
@@ -200,6 +262,44 @@ impl PdfInspectorServer {
 
 #[tool_router]
 impl PdfInspectorServer {
+    /// Return the generic document contract for one known format.
+    #[tool(description = "Return capabilities and safety boundaries for a generic document format")]
+    async fn document_capabilities(&self, params: Parameters<DocumentCapabilitiesInput>) -> String {
+        let kind = params.0.kind;
+        dispatch_document_sync("document_capabilities", move || {
+            let kind = pdf_inspector_skillkit::document::DocumentKind::from_name(&kind)
+                .ok_or(pdf_inspector_skillkit::document::DocumentError::Unrecognized)?;
+            Ok::<_, pdf_inspector_skillkit::document::DocumentError>(
+                pdf_inspector_skillkit::document::capabilities(kind),
+            )
+        })
+        .await
+    }
+
+    /// Classify a local document without converting it.
+    #[tool(
+        description = "Classify a local document by content signature and report whether its generic route is enabled"
+    )]
+    async fn classify_document(&self, params: Parameters<DocumentPathInput>) -> String {
+        let path = params.0.path;
+        dispatch_document_sync("classify_document", move || {
+            pdf_inspector_skillkit::document::classify(&path)
+        })
+        .await
+    }
+
+    /// Convert an enabled DOCX, exact `.pptx`, exact `.xlsx`, exact `.ods`, exact `.odt`, strict EPUB, or bounded CSV package through the supervised document worker.
+    #[tool(
+        description = "Convert an enabled local DOCX, exact `.pptx`, exact `.xlsx`, exact `.ods`, exact `.odt`, strict EPUB, or bounded CSV input to sanitized Markdown through a bounded worker"
+    )]
+    async fn document_to_markdown(&self, params: Parameters<DocumentPathInput>) -> String {
+        let path = params.0.path;
+        dispatch_document("document_to_markdown", move || async move {
+            pdf_inspector_skillkit::document::to_markdown(path).await
+        })
+        .await
+    }
+
     /// Classify a PDF as TextBased, Scanned, ImageBased, or Mixed.
     #[tool(
         description = "Classify a PDF as TextBased/Scanned/ImageBased/Mixed with confidence score and per-page OCR hints"
@@ -411,6 +511,7 @@ impl ServerHandler for PdfInspectorServer {
             .with_instructions(
                 "PDF classification, text extraction, and layout analysis. \
              Local and offline, with no bundled OCR engine. \
+             Also exposes bounded DOCX, strict PPTX, strict XLSX, strict ODS, strict ODT, Linux-memory-gated strict ODP, Linux-memory-gated strict EPUB, and Linux-memory-gated strict CSV conversion paths. \
              Includes Sweet tax-review demo tools for deterministic package \
              review, line-item comparison, and Markdown memo rendering.",
             )
@@ -423,6 +524,10 @@ impl ServerHandler for PdfInspectorServer {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("--anydoc-worker") {
+        return pdf_inspector_skillkit::document::run_worker().map_err(anyhow::Error::from);
+    }
+
     // CRITICAL: stdout is the MCP JSON-RPC channel. All logs MUST go to stderr
     // or the protocol breaks. Dependency logs stay disabled because protocol
     // libraries can include full request arguments in debug events. The

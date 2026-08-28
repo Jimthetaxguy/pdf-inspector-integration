@@ -2,6 +2,7 @@
 name = "pdf-inspector-mcp"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 publish = false
 description = "MCP server exposing pdf-inspector tools to coding agents"
 license = "MIT OR Apache-2.0"
@@ -25,3 +26,8 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+libc = { workspace = true }
+tempfile = { workspace = true }
+zip = { workspace = true }

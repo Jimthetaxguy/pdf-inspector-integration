@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>Tax-neutral Workpaper</t></is></c><c r="B1" t="inlineStr"><is><t>Amount</t></is></c></row>
+    <row r="2"><c r="A2" t="inlineStr"><is><t>Gross receipts</t></is></c><c r="B2"><v>125000</v></c></row>
+    <row r="3"><c r="A3" t="inlineStr"><is><t>Other receipts</t></is></c><c r="B3"><v>25000</v></c></row>
+    <row r="4"><c r="A4" t="inlineStr"><is><t>Total receipts</t></is></c><c r="B4"><f>SUM(B2:B3)</f><v>150000</v></c></row>
+  </sheetData>
+</worksheet>
