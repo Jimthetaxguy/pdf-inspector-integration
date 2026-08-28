@@ -1,0 +1,3 @@
+This is intentionally not a ZIP package. It is a public negative fixture used
+to assert that the generic worker returns a stable malformed error without
+leaking a path or parser detail.

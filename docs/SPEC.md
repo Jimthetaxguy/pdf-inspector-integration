@@ -1,6 +1,6 @@
 # PDF stack integration — capabilities & plan spec
 
-<!-- STATUS: PARTIAL — 13-tool PDF/domain MCP baseline built; broader framework and AnyDoc phases planned. -->
+<!-- STATUS: PARTIAL — 13-tool PDF/domain baseline plus bounded DOCX, strict PPTX, strict XLSX, strict ODS, strict ODT, strict ODP, Linux-memory-gated strict EPUB, and Linux-memory-gated strict CSV slices built; broader formats remain gated. -->
 
 Companion docs:
 - [`assessment.md`](assessment.md) — Part 1 install + API inventory + baseline benchmark
@@ -141,10 +141,10 @@ No post-processor ever modifies upstream source. Each lands as:
 
 ### 6.1 Read-side — pdf-inspector
 
-**Decision (firm):** `cargo git` pin by SHA.
+**Historical decision (superseded by the 2026-08-28 provenance audit):** `cargo git` pin by SHA.
 - `pdf-inspector = { git = "https://github.com/firecrawl/pdf-inspector", rev = "2f23f07f…" }`
-- Clone at `<HOME>/code/third_party/pdf-inspector` is read-only reference + build host for the CLI binaries. **Zero edits** to that directory.
-- `<HOME>/code/third_party/pdf-inspector` → `git pull --ff-only` tracks upstream; new SHA adoption is a deliberate action.
+- Sibling mirror: logical name `firecrawl-pdf-inspector`; the public repository never vendors the source.
+- Refresh the sibling mirror with `git fetch`; adopt a release or exact revision only after the tracked provenance review.
 
 Rejected alternatives:
 - Fork — violates upstream-preserving rule; adopts merge-conflict tax.
@@ -161,6 +161,8 @@ decided when write tools are actually scoped:
 | **B. firecrawl/lopdf at head** | `lopdf = { git = "https://github.com/firecrawl/lopdf", rev = "<sha>" }` | Claimed extra features (see §2.2) | Unverified; forks to separate crate version → cargo may build two lopdfs, pulling in ~double binary size and dedup risk; stale vs. J-F-Liu |
 | **C. lopdf from crates.io** | `lopdf = "0.40"` | Stable release channel | Version may not align with pdf-inspector's pin; dedup risk |
 | **D. `cargo vendor` offline snapshot** | `cargo vendor` + `.cargo/config.toml` | Fully offline reproducible | Large vendor dir; overkill if we don't actually need offline |
+
+**Current parser graph:** the released PDF dependency resolves `lopdf 0.42.0` from crates.io. Write-side dependencies remain out of scope.
 
 **Decision criterion:** we pick whichever option **(a)** works at the
 same SHA pdf-inspector uses (so there's one lopdf in the dep graph, not
@@ -344,17 +346,17 @@ If the binary isn't built, the MCP client should surface a clear startup
 error ("binary not found at …"). The skill `SKILL.md` documents the
 install prerequisite so agents can self-diagnose.
 
-### 12.3 Upstream SHA bump procedure
+### 12.3 Upstream release refresh procedure
 
-1. `cd <HOME>/code/third_party/pdf-inspector && git pull --ff-only`
-2. Record new HEAD SHA.
-3. In integration workspace: edit `Cargo.toml` `rev = "<new-sha>"`.
-4. `cargo build --release` — verify green.
-5. Re-run Part 1 regression corpus; diff results vs. prior baseline.
-6. If green: `cargo install --path crates/pdf-inspector-mcp --force`.
-7. Update `THIRD_PARTY.md` with new SHA + date + changelog summary.
+1. Refresh the sibling mirrors for `firecrawl-pdf-inspector` and `firecrawl-anydoc` with `git fetch`.
+2. Record each default-branch commit and latest release/tag in `docs/upstream-provenance.md`.
+3. Prefer exact released versions in `Cargo.toml`; use a revision only when a release is insufficient.
+4. Run the locked build, test, Clippy, audit, hygiene, and fixture gates.
+5. Diff parser output against the prior public-fixture baseline and record the disposition.
+6. If green, update the handoff and install the MCP binary.
+7. Update `THIRD_PARTY.md` and the provenance manifest with the release, checksum, date, and rationale.
 
-Rollback: revert the `rev` line and `cargo install` again.
+Rollback: restore the prior exact dependency versions and lockfile, then rerun the PDF-only regression suite.
 
 ### 12.4 Logging & debugging
 

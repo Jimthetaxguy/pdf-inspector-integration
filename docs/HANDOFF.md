@@ -1,8 +1,8 @@
 # anydoc-enhanced — public handoff
 
-**Last reconciled:** 2026-08-23
+**Last reconciled:** 2026-08-28
 **Repository:** <https://github.com/Jimthetaxguy/anydoc-enhanced>
-**Status:** PDF MCP baseline exists; AnyDoc integration is planned, not shipped.
+**Status:** PDF MCP baseline is aligned to Firecrawl pdf-inspector 1.17.0; generic document tools are live for bounded DOCX, strict PPTX, strict XLSX, strict ODS, strict ODT, strict ODP, Linux-memory-gated strict EPUB, and Linux-memory-gated strict CSV conversion.
 
 This is the public, repository-relative entry point for future work. Do not add
 home-directory paths, private corpus locations, credentials, internal agent
@@ -10,10 +10,11 @@ configuration, or identifying source-document details.
 
 ## Current system
 
-The workspace exposes 13 MCP tools over stdio:
+The workspace exposes 16 MCP tools over stdio:
 
 - Six generic PDF tools: classify, Markdown, layout, batch, and two region
   extractors.
+- Three generic document tools: capability discovery, classification, and bounded DOCX/PPTX/XLSX/ODS/ODT/ODP/EPUB/CSV-to-Markdown conversion (ODP, EPUB, and CSV are enabled only on Linux hosts with the address-space ceiling).
 - Three domain parsers: tax-form identification, IRC section parsing, and SEC
   filing splitting.
 - Four deterministic synthetic tax-review demo tools.
@@ -25,7 +26,9 @@ pdf-inspector-mcp
         |
 pdf-inspector-skillkit
         |
-firecrawl/pdf-inspector
+firecrawl/pdf-inspector 1.17.0 (released, exact Cargo lock resolution)
+        |
+        +-- anydoc 0.2.4 via bounded DOCX/PPTX/XLSX/ODS/ODT/ODP/EPUB worker; local strict CSV adapter shares the worker boundary
 ```
 
 `pdf-inspector-skillkit` is the only crate that may call parser libraries.
@@ -35,11 +38,11 @@ MCP handlers and domain modules must depend on the skillkit boundary.
 
 | Path | Responsibility |
 |---|---|
-| `crates/pdf-inspector-skillkit/src/lib.rs` | PDF facade, validation, and serialized result types |
+| `crates/pdf-inspector-skillkit/src/lib.rs` | PDF facade, document contract, validation, and serialized result types |
 | `crates/pdf-inspector-skillkit/src/domain/` | Tax, IRC, SEC, and synthetic review logic |
-| `crates/pdf-inspector-mcp/src/main.rs` | MCP schemas, tool registration, dispatch, and timeout response handling |
+| `crates/pdf-inspector-mcp/src/main.rs` | MCP schemas, worker mode, tool registration, dispatch, and timeout response handling |
 | `scripts/check-public-hygiene.sh` | Candidate-text obvious-identifier heuristic used locally and in CI |
-| `test-corpus/README.md` | Public fixture provenance and contributor gate |
+| test-corpus/README.md | Public PDF/PPTX/DOCX/XLSX/ODS/ODT/ODP/CSV/EPUB fixture provenance and contributor gate |
 | `docs/dependency-pr-review-2026-08-22.md` | Live review of dependency PRs #14–#18 |
 | `docs/anydoc-integration-plan.md` | Authoritative dependency-ordered AnyDoc plan |
 | `CONTEXT.md` | Stable project vocabulary and boundaries |
@@ -51,15 +54,21 @@ MCP handlers and domain modules must depend on the skillkit boundary.
   partial extraction with page-level OCR diagnostics; no OCR engine is
   currently shipped.
 - Input paths are canonicalized and capped at 50 MiB.
-- MCP handlers return after a 30-second Tokio timeout, but a timed-out
-  `spawn_blocking` task is not terminated. The AnyDoc plan therefore requires a
-  killable worker boundary before untrusted non-PDF parsing is exposed.
-- AnyDoc `v0.2.3` is a native Rust library, MIT licensed, and uses
-  `pdf-inspector 1.14.2` for PDFs.
-- This workspace still uses an older Git-source `pdf-inspector 0.1.0` revision.
-  Parser convergence is the first AnyDoc implementation gate.
-- AnyDoc CSV and RTF parsing remain disabled in the proposed first release
-  because upstream issue #104 documents memory-exhaustion risk.
+- PDF MCP handlers return after a 30-second Tokio timeout; the generic DOCX/PPTX/XLSX/ODS/ODT/ODP/EPUB path
+  additionally uses a 15-second killable child worker with input/output caps and a
+  two-worker in-flight semaphore; Unix process-group cleanup on timeout, protocol
+  error, output overflow, and caller cancellation, Linux address-space
+  plus seccomp network denial, and Darwin named `no-network` profile are active.
+  Filesystem isolation and non-Linux memory containment remain follow-up gates
+  before broader hostile-format enablement.
+- AnyDoc `v0.2.4` is a native Rust library, MIT licensed, and is resolved
+  alongside the workspace `pdf-inspector 1.17.0` release. Its typed `NeedsOcr`
+  result remains available for future PDF-specific evaluation and is not used to bypass the
+  dedicated PDF facade.
+- This workspace now uses released `pdf-inspector 1.17.0` with `lopdf 0.42.0`.
+  The existing 13-tool PDF surface compiles and passes its regression suite.
+  The AnyDoc dependency, provider contract, worker, DOCX happy path, strict PPTX path, strict XLSX path, strict ODS path, strict ODT path, strict ODP path, and strict EPUB path are implemented; the local strict CSV adapter is implemented through worker code 6 on Linux.
+- AnyDoc CSV and RTF parsing remain unexposed because upstream issue #104 documents materialization and memory-exhaustion risk; the local strict CSV adapter is separate and Linux-memory-gated.
 
 ## Plan invariant
 
@@ -106,14 +115,19 @@ exact tool-name set. When parser dependencies change, also assert that
 
 ## Next dependency chain
 
-1. Land the dependency/security baseline described in the dated PR review.
-2. Converge the skillkit and AnyDoc on one exact `pdf-inspector 1.14.2`.
-3. Add the provider-neutral document contract while preserving all PDF APIs.
-4. Add the supervised AnyDoc worker for allowlisted non-PDF formats.
-5. Add the three generic MCP tools and real, public integration fixtures.
-6. Promote formats only after corpus, resource, privacy, and rollback gates
-   pass.
+1. Keep the dependency and security baseline tracked in the dated PR review.
+2. Maintain the provider-neutral contract and dedicated PDF adapter as stable boundaries.
+3. Expand the structural completeness oracle beyond the known public markers, then
+   complete additional hostile-resource, filesystem-isolation, and cross-host memory evidence
+   before broader format promotion. The worker-level Darwin network canary, Linux
+   seccomp implementation/target checks, initial Darwin release-mode resource
+   observations, current public adversarial fixture slice, structural marker oracle,
+   reviewed-warning classifier, Unix end-to-end process-group reap proof, and tracked
+   EPUB qualification corpus is green for its scoped lane.
+4. Keep ODP and EPUB under their Linux-memory-gated strict contracts; add RTF
+   only after its own real fixture, threat model, completeness, resource, and
+   rollback evidence pass. EPUB has a tracked qualification corpus, navigation
+   oracle, real-parser chapter-order/omission evidence, and Linux worker route;
+   hostile-resource, filesystem, and cross-platform gates remain.
 
-Steps 2–6 are specified in
-[`docs/anydoc-integration-plan.md`](anydoc-integration-plan.md). Do not skip
-parser convergence or expose upstream AnyDoc model types directly through MCP.
+The detailed ordering remains in [`docs/anydoc-integration-plan.md`](anydoc-integration-plan.md). Do not skip parser convergence or expose upstream AnyDoc model types directly through MCP.

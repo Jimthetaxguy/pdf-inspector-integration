@@ -1,9 +1,9 @@
 # Firecrawl AnyDoc integration plan
 
-**Evidence date:** 2026-08-22
-**Plan status:** proposed architecture; implementation has not started
+**Evidence date:** 2026-08-28
+**Plan status:** parser convergence complete; bounded worker, contract, DOCX happy path, strict PPTX, strict XLSX, strict ODS, strict ODT, Linux-memory-gated strict CSV, Linux-memory-gated strict ODP, and Linux-memory-gated strict EPUB slices implemented; broader formats remain gated
 **Target:** additive multi-format document support without changing the 13
-existing PDF/domain MCP tools
+existing PDF/domain MCP tools plus additive generic document tools
 
 ## Decision
 
@@ -13,32 +13,27 @@ allowlisted non-PDF formats through a supervised, killable worker built from
 the same Rust workspace.
 
 No non-PDF format is enabled merely because `AnyDoc::to_markdown` returns
-`Ok`. Version 0.2.3 can recover from skipped package parts and report the event
-only through document-controlled log text. Each parser path therefore remains
-disabled until completeness is observable through a typed signal or the
-conversion fails closed.
+`Ok`. The current worker enables DOCX, exact `.pptx`, exact `.xlsx`, exact `.ods`, exact `.odt`, exact `.odp`, and strict EPUB through AnyDoc; strict CSV uses a separate local adapter and CSV, ODP, and EPUB are enabled only on Linux where the worker address-space ceiling is enforceable. PPTX requires every declared slide to resolve to a well-formed shape tree and fails closed for hidden slides, external relationships, active content, and incomplete packages. XLSX uses a local cached-value-only policy and fails closed for hidden content, external links, active content, macro-enabled/binary/legacy containers, malformed packages, and uncached formulas. Broader parser paths remain disabled until completeness is observable through a typed signal or the conversion fails closed.
 
 Do not use the Node CLI, `npx`, Python bindings, WASM wrapper, Docker, or the
 hosted Firecrawl Parse API. The local library path is offline and does not need
 an API key. The hosted API uploads documents and is a different privacy and
 authorization boundary.
 
-CSV and RTF remain disabled in the first release because upstream issue
-[#104](https://github.com/firecrawl/anydoc/issues/104) documents memory
-exhaustion that a 50 MiB consumer input cap only partially mitigates.
+The upstream AnyDoc CSV and RTF paths remain unexposed because issue #104 documents materialization and memory-exhaustion risk. The local strict CSV adapter does not use AnyDoc's CSV parser: it enforces UTF-8, delimiter, quoting, row/column/field/output, and equal-width-row limits before producing Markdown, and it is enabled only on Linux with an address-space ceiling.
 
 ## Verified upstream baseline
 
 | Property | Observed evidence |
 |---|---|
 | Repository | [`firecrawl/anydoc`](https://github.com/firecrawl/anydoc) |
-| Version and revision | `v0.2.3` at signed commit `bf3d33e61731580d1ee1c6a85e56093d715a21a6` |
+| Version and revision | `v0.2.4` at signed commit `42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c` |
 | License | MIT |
 | Core runtime | Rust 2024; minimum supported Rust `1.88` |
 | Public Rust API | `to_markdown`, `to_markdown_bytes`, `to_document`, and content/extension format detection |
 | Local network behavior | No HTTP client, telemetry, update checker, API-key lookup, external service, or ML model in the resolved local runtime |
 | Formats | Word, PowerPoint, Excel, OpenDocument, RTF, EPUB, CSV, and PDF variants |
-| PDF behavior | Delegates to `pdf-inspector 1.14.2`; PDFs bypass AnyDoc's shared document model; image-only PDFs require OCR |
+| PDF behavior | Declares `pdf-inspector 1.14.2` compatibility; this workspace converges that requirement to released `1.17.0`; PDFs bypass AnyDoc's shared document model; image-only PDFs require OCR |
 | Safety controls | Fixed archive, decompression, XML, table, binary-record, and retained-asset limits |
 | Upstream tests | 294 root-crate tests passed and 1 was ignored at the pinned revision; checked-in fixtures and fuzz targets exist, but fuzz targets are not exercised by upstream CI |
 
@@ -62,7 +57,11 @@ Process isolation is still required at the MCP execution boundary. Tokio
 cannot abort a `spawn_blocking` closure after it starts; dropping the join
 handle only stops waiting for it. A response timeout therefore does not prove
 that a pathological parser stopped consuming CPU or memory. The worker below
-is a small Rust binary using the same library, not an external service.
+is a small Rust binary using the same library, not an external service. It uses
+versioned format negotiation, private working-directory state, process-group
+cleanup on Unix, a Linux address-space ceiling plus seccomp network-denial
+filter, and Darwin named `no-network` profile; platform-specific hostile-input
+promotion remains a separate gate.
 
 ## Target architecture
 
@@ -75,7 +74,7 @@ is a small Rust binary using the same library, not an external service.
                                 +--------+---------+
                                          |
                                          v
-MCP stdio  ->  document service/router  ->  pdf-inspector =1.14.2
+MCP stdio  ->  document service/router  ->  pdf-inspector =1.17.0
                      |
                      | allowlisted non-PDF input bytes
                      v
@@ -84,7 +83,7 @@ MCP stdio  ->  document service/router  ->  pdf-inspector =1.14.2
                      |
                      v
                AnyDoc adapter
-               anydoc =0.2.3
+               anydoc =0.2.4
                      |
                      v
           completeness + output sanitizer
@@ -104,25 +103,63 @@ try-every-parser chain.
 | Input | Route | Initial status | Reason |
 |---|---|---|---|
 | PDF | Existing PDF adapter | Enabled | Preserves classification, page/OCR diagnostics, regions, and domain helpers |
-| DOC/DOCX/DOCM | AnyDoc worker | Gate-controlled | Real Rust parser; macros are not executed |
-| PPT/PPS/POT/PPTX/PPTM/PPSX/PPSM | AnyDoc worker | Gate-controlled | Markdown only; slide-boundary limitations reported as capability metadata |
-| XLS/XLSX/XLSM/XLSB | AnyDoc worker | Gate-controlled | Markdown only; source-coordinate limitations reported as capability metadata |
-| ODT/ODS/ODP | AnyDoc worker | Gate-controlled | Allow after public fixture tests |
-| EPUB | AnyDoc worker | Gate-controlled | Parser does not fetch relationships; output egress still requires sanitization |
-| CSV | None | Disabled | Upstream #104 memory-exhaustion risk; no content signature |
+| DOC/DOCX/DOCM | AnyDoc worker | DOCX enabled; DOC/DOCM disabled | Exact DOCX package only; macros are not executed |
+| PPT/PPS/POT/PPTX/PPTM/PPSX/PPSM | AnyDoc worker | Exact `.pptx` enabled; other presentation variants disabled | Every declared slide must resolve; hidden, external, active, malformed, and incomplete packages fail closed |
+| XLS/XLSX/XLSM/XLSB | AnyDoc worker | Exact `.xlsx` enabled; XLS/XLSM/XLSB disabled | Cached values only; hidden, external, active, incomplete, binary, and legacy variants fail closed |
+| ODT | AnyDoc worker | Exact ODT enabled | Visible text only; exact ODF identity, balanced XML, hidden/tracked/external/encrypted/active/missing-asset preflight; unsupported optional parts remain incomplete |
+| ODS | AnyDoc worker | Exact `.ods` enabled | Exact mimetype/content identity, visible non-active tables, cached/displayed values, and fail-closed hidden/external/encrypted/active/uncached checks |
+| ODP | AnyDoc worker | Linux-memory-gated strict ODP | Exact presentation identity, visible pages, local assets, active/external/hidden rejection, and real worker evidence; layout/source coordinates remain out of contract |
+| EPUB | AnyDoc worker | Linux-memory-gated strict | Exact EPUB 3 OCF/container/OPF/spine preflight, complete navigation order, local-resource checks, active/external/hidden/encrypted rejection, tracked corpus, executable oracle, and real-parser chapter-order/omission evidence; public worker/MCP route is enabled only where the worker address-space ceiling is enforceable |
+| CSV | Local strict adapter | Linux-memory-gated | Valid UTF-8, deterministic delimiter sniffing, RFC-4180-style quoting, equal-width rows, bounded fields/output, Markdown escaping, synthetic public fixture, and parser/MCP tests; upstream AnyDoc CSV behavior is not inherited |
 | RTF | None | Disabled | Upstream #104 memory-exhaustion risk |
 | Image-only or scanned PDF | None | Typed `ocr_required` error | No silent upload or hosted OCR fallback |
 | Unknown, encrypted, oversized, or disallowed input | None | Typed hard error | Never fall back after a security or permission failure |
 
-No existing PDF tool changes its route. The new generic Markdown tool routes a
-PDF through the existing adapter, not through AnyDoc's PDF wrapper.
+No existing PDF tool changes its route. PDFs continue to use the dedicated PDF
+tools and are never sent through AnyDoc by the generic document route.
 
-An AnyDoc success value is not evidence of a complete conversion. At the
+Strict ODS now adds an exact package identity gate, well-formed content check, visible-table requirement, cached/displayed formula policy, and rejection of external references, encrypted manifests, active objects/scripts, and hidden table content. An AnyDoc success value is not evidence of a complete conversion. At the
 pinned version, EPUB chapters, presentation slides, spreadsheet sheets, and
 archive parts can be skipped while the call still succeeds. Upstream log text
-is neither a public warning schema nor safe to forward. A format stays disabled
-unless an audited, typed completeness mechanism covers every recoverable skip
-path; any detected skip becomes `incomplete_conversion`.
+is neither a public warning schema nor safe to forward. The worker now installs
+a private sink logger and maps the reviewed AnyDoc v0.2.4 omission and
+malformed-recovery prefixes to stable `incomplete_conversion` without retaining
+raw messages; known public fixtures now have structural marker oracles, while
+unobserved silent omissions still require additional cases. A format stays disabled
+unless an audited, typed completeness mechanism covers
+every recoverable skip path; any detected skip becomes `incomplete_conversion`.
+
+Strict ODT now adds an exact mimetype/content identity gate, balanced
+XML validation, required office:text content, manifest encryption detection,
+and rejection of hidden text, tracked changes, annotations, conditional text,
+external references, active forms/scripts/objects, missing internal href/src
+targets, and unsupported `text:note` content that AnyDoc 0.2.4 omits. The
+public synthetic ODT corpus includes one positive fixture and negative cases for
+each exercised boundary; the real MCP worker test asserts
+provider identity, visible output sentinels, and path/HTML/URL absence. ODT is
+enabled for this narrow visible-text contract. Strict ODP is now an additive Linux-memory-gated presentation route, and strict EPUB is now an additive Linux-memory-gated EPUB 3 route, each with its own package and completeness preflight.
+Initial Darwin/arm64 release-mode resource observations for each enabled lane are
+recorded in [`docs/resource-evidence.md`](resource-evidence.md); this is baseline
+evidence, not closure of cross-host memory, filesystem, hostile-resource, or
+non-Linux containment gates. The worker-level network canaries are scoped evidence
+on Darwin, with Linux enforcement covered by the target build and CI containment
+job.
+
+### Strict ODP
+
+Strict ODP uses AnyDoc v0.2.4 only after a local preflight. The route requires
+the exact presentation mimetype, content.xml, balanced XML, an
+office:presentation body with at least one page, local referenced assets, and
+no active, external, or hidden presentation content. Encryption, malformed
+packages, wrong identity, missing assets, and archive amplification map to
+typed failures. Worker code 7 keeps the provider-neutral protocol explicit.
+
+The public fixture is copied from the MIT-licensed AnyDoc v0.2.4 ODP fixture;
+the repository records its hash and deterministic derivatives. The real worker
+path is covered on Darwin, while public MCP conversion is enabled only on
+Linux where the process address-space ceiling is enforceable. There is no
+dependency update, vendored source, PDF route change, layout-fidelity claim,
+or source-coordinate claim.
 
 Encrypted OOXML commonly uses an OLE container with `EncryptedPackage` and
 `EncryptionInfo` streams, for which AnyDoc content detection can return
@@ -176,18 +213,22 @@ slide, sheet, or source-offset provenance that upstream does not expose.
   worker's own bounded, path-free structured events.
 - Stop reading and kill the worker if stdout exceeds 8 MiB. Return
   `output_too_large`; never silently truncate document content.
-- Kill and reap the worker/process group when the 30-second deadline expires.
+- Kill and reap the worker/process group when the 15-second worker deadline expires,
+  on protocol/output failure, or after caller cancellation. The cancellation supervisor
+  retains the in-flight permit until cleanup completes; the outer MCP document-tool
+  timeout remains 30 seconds.
 - Establish an OS memory ceiling from measured public/adversarial fixtures,
   with an absolute ceiling of 1 GiB. A platform without an enforceable memory
   boundary cannot enable untrusted CSV or RTF.
 - Put a global semaphore and aggregate byte/memory budget above worker launch.
   Per-process limits alone allow concurrent workers to exhaust the host.
-- Treat the worker as crash and resource containment, not a hostile-input
-  sandbox: a same-UID subprocess otherwise retains ambient filesystem and
-  network authority. Close inherited file descriptors, use an empty private
-  working directory, and deny filesystem/network access per platform. If those
-  controls cannot be enforced, narrow the supported threat model and leave
-  untrusted inputs disabled.
+- Treat the worker as crash and resource containment, not a complete hostile-input
+  sandbox. Close inherited file descriptors and use an empty private working
+  directory. Linux installs the address-space ceiling and seccomp network-denial
+  filter; macOS uses the named `no-network` profile. Filesystem isolation and
+  non-Linux memory ceilings are not yet universal; if a required control cannot
+  be enforced, narrow the supported threat model and leave untrusted inputs
+  disabled.
 - Do not expose embedded asset bytes in the first MCP schema.
 - Parse returned Markdown into an AST, remove raw HTML, and neutralize remote,
   `file:`, and `data:` image destinations before returning content. Parser
@@ -225,7 +266,7 @@ pushed, its new CI jobs pass on that exact head, and the change is merged.
 ### Gate 1 — parser convergence
 
 Replace the old Git-source `pdf-inspector 0.1.0` with exact
-`pdf-inspector = "=1.14.2"`, then add exact `anydoc = "=0.2.3"`. Commit the
+`pdf-inspector = "=1.17.0"`, then add exact `anydoc = "=0.2.4"`. Commit the
 Cargo lockfile checksums and record the signed upstream revisions in
 `THIRD_PARTY.md`.
 
@@ -240,12 +281,12 @@ require revision-pinned Git sources, and delete source allowlist entries when
 convergence removes the corresponding Git dependencies.
 
 **Exit evidence:** `cargo metadata` and `cargo tree -d` show exactly one
-`pdf-inspector 1.14.2`; all 13 existing tools compile and their public PDF
+`pdf-inspector 1.17.0`; all 13 existing tools compile and their public PDF
 fixture outputs remain compatible.
 
 ### Gate 2 — contract plus unchanged PDF adapter
 
-Add the local contract and router. Wrap the existing PDF functions as the PDF
+The local contract and router are implemented in `src/document.rs`. Wrap the existing PDF functions as the PDF
 provider without changing current MCP names or schemas. Add contract tests for
 error mapping, provenance, capability truthfulness, PDF route selection, and
 encrypted OOXML preflight before extension-based routing.
@@ -255,29 +296,30 @@ prove every PDF takes the PDF adapter and every hard failure prevents fallback.
 
 ### Gate 3 — supervised AnyDoc worker
 
-Add a workspace-built worker and the real AnyDoc adapter. Enable only the
-allowlisted office/OpenDocument/EPUB formats. Use raw stdin bytes, bounded
+The workspace-built worker and real AnyDoc adapter are implemented for DOCX, exact PPTX, exact XLSX, exact ODS, exact ODT, exact ODP, and strict EPUB through AnyDoc.
+The local strict CSV adapter and the AnyDoc ODP/EPUB adapters use the same bounded worker boundary and are enabled only on Linux with enforceable address-space containment. RTF and other office formats remain disabled. The worker uses raw stdin bytes, bounded
 stdout/stderr, typed exit mapping, process-group cleanup, timeout termination,
-an enforceable memory boundary, a global concurrency budget, and a versioned
-IPC handshake. Resolve the exact sibling worker executable; never search
+versioned format negotiation, a global concurrency budget, an enforceable Linux
+address-space ceiling plus seccomp network-denial filter, and Darwin named
+`no-network` profile; filesystem isolation and non-Linux memory containment
+remain promotion gates. Resolve the exact sibling worker executable; never search
 `PATH`.
 
 The worker must suppress all upstream logs, map upstream errors without their
 document-controlled fields, fail on observable incomplete conversions, and run
-the Markdown/HTML egress sanitizer before returning content. If the pinned
-AnyDoc code has a recoverable skip path without a typed completeness signal,
-that parser path remains disabled until upstream adds one or a minimal audited
-patch exposes it.
+the Markdown/HTML egress sanitizer before returning content. For PPTX, the local preflight closes the pinned parser's recoverable slide-skip path by validating every declared slide and rejecting any omission before conversion. If another pinned AnyDoc code path has a recoverable skip path without a typed completeness signal, that parser path remains disabled until upstream adds one or a minimal audited patch exposes it.
 
 Tests must exercise the real AnyDoc library with public fixtures. Fakes are
 permitted only in test files for worker failure injection; they do not satisfy
-the integration gate. Hostile-input support additionally requires per-platform
-filesystem/network denial; a killable subprocess alone is not a sandbox.
+the integration gate. The Darwin worker-level network canary passes locally, and
+Linux network denial is exercised by the target-specific implementation and CI
+containment job. Hostile-input support still requires filesystem isolation, memory
+evidence, and resource measurements; a killable subprocess alone is not a sandbox.
 
 **Exit evidence:** real conversion tests, malformed/encrypted/incomplete/
 resource-limit tests, remote-image and raw-HTML sanitizer tests, output-cap
-tests, worker-kill tests, aggregate-concurrency tests, and a no-network
-dependency/runtime check all pass. CSV and RTF remain explicitly disabled.
+tests, worker-kill tests, aggregate-concurrency tests, and scoped no-network
+dependency/runtime checks pass. The upstream AnyDoc CSV/RTF paths remain explicitly disabled; the local strict CSV adapter is separately enabled only on Linux with enforceable process-memory containment.
 
 ### Gate 4 — small backward-compatible MCP surface
 
@@ -322,10 +364,9 @@ Published upstream benchmark scores are not acceptance evidence for this gate.
 
 ### Gate 6 — documentation and rollout
 
-Update README, CHANGELOG, CONTEXT, THIRD_PARTY, contributor guidance, and MCP
+Update README, CONTEXT, THIRD_PARTY, contributor guidance, and MCP
 examples. New generic tools may become available only after Gates 0–5 pass.
-PDF routing never changes by default. CSV/RTF require either closure of
-upstream #104 with verified bounds or a separately proven OS-sandbox policy.
+PDF routing never changes by default. RTF still requires closure of upstream #104 or a separately proven OS-sandbox policy; CSV remains limited to the local strict adapter and Linux memory boundary until cross-host evidence is available.
 
 ## Planned file map
 

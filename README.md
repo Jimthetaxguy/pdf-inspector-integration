@@ -9,13 +9,21 @@ IRC, SEC-filing, and Sweet tax-review demo helpers exposed as separate tools.
 
 ## Status
 
-**Alpha.** The 13 MCP tools compile and load; validation against real PDFs is
+**Alpha.** The 16 MCP tools compile and load; validation against real PDFs is
 partial. Use ground-truth fixtures of your own to confirm fitness for any
 specific workflow.
 
-The broader Firecrawl AnyDoc integration is planned but is not yet shipped.
-See the [dependency-ordered integration plan](docs/anydoc-integration-plan.md)
-for the verified upstream constraints, architecture, and acceptance gates.
+The Firecrawl AnyDoc integration now ships bounded DOCX, strict PPTX, strict XLSX, strict ODS, strict ODT, and strict ODP lanes, plus Linux-memory-gated strict CSV and strict EPUB lanes. ODP and EPUB are enabled only where the worker address-space ceiling is enforceable. DOCX preserves the existing contract. PPTX accepts exact .pptx containers only: every declared slide must resolve to a well-formed shape tree, and hidden, externally linked, active, or incomplete presentations fail closed. XLSX accepts exact .xlsx containers only: cached values are read without formula evaluation, and hidden, externally linked, macro-enabled, binary, legacy, malformed, or incomplete workbooks fail closed. ODS accepts exact spreadsheet packages with visible, non-active content and cached/displayed values only; hidden, externally linked, encrypted, active, malformed, or formula-incomplete packages fail closed. ODT accepts exact text packages with visible content only; hidden/tracked, externally linked, encrypted, active, malformed, or missing-asset packages fail closed. EPUB accepts strict EPUB 3 packages only: every declared spine chapter must resolve in navigation order, local resources must exist, and hidden, external, active, encrypted, malformed, or archive-amplified packages fail closed. Broader formats remain disabled pending their own fixture, completeness, and resource gates.
+See the [dependency-ordered integration plan](docs/anydoc-integration-plan.md), [upstream drift audit](docs/upstream-drift-audit-2026-08-28.md), [iterative improvement roadmap](docs/iterative-improvement-roadmap.md), and [worker resource evidence](docs/resource-evidence.md)
+for the verified upstream constraints, architecture, measured baseline, and acceptance gates.
+
+## Real systems
+
+- Released Firecrawl `pdf-inspector 1.17.0` plus `lopdf 0.42.0` for local PDF parsing.
+- Released Firecrawl `anydoc 0.2.4` for local DOCX, strict PPTX, strict XLSX, strict ODS, strict ODT, strict ODP, and strict EPUB conversion through a supervised child process; the CSV route is a separate local strict adapter.
+- Strict CSV accepts bounded UTF-8 delimiter-separated text with deterministic delimiter sniffing, equal-width rows, RFC-4180-style quoting, and Markdown escaping; malformed, ragged, oversized, or unsupported inputs fail closed. The route is enabled only where the worker address-space ceiling is enforceable (currently Linux).
+- MCP uses local stdio JSON-RPC; no hosted API, OCR service, telemetry, or network fetch is enabled by default.
+- Optional local controls: `PDF_INSPECTOR_MCP_LOG` selects a safe log level and `ANYDOC_WORKER_BIN` selects an explicit worker-compatible executable.
 
 Validation snapshot (see [`docs/HANDOFF.md`](docs/HANDOFF.md) for the current
 public handoff):
@@ -55,10 +63,13 @@ parsing for Title 26 PDFs, and SEC 10-K / 10-Q section splitting. These are
 layered as separate MCP tools rather than baked into the core extractor so
 the upstream surface stays clean.
 
-## The 13 tools
+## The 16 tools (13 PDF/domain tools plus 3 generic document tools)
 
 | Tool | What it does | Status |
 |---|---|---|
+| `document_capabilities` | Report the stable generic-format capability contract | beta |
+| `classify_document` | Detect a local document kind and whether its generic route is enabled | beta |
+| `document_to_markdown` | Convert an enabled DOCX, exact `.pptx`, exact `.xlsx`, exact `.ods`, exact `.odt`, exact `.odp`, strict EPUB, or bounded CSV input to sanitized Markdown through a bounded worker | beta |
 | `classify_pdf` | TextBased / Scanned / Mixed classification with confidence | stable |
 | `pdf_to_markdown` | Full PDF to clean Markdown with headings, tables, lists | stable |
 | `analyze_layout` | Tables, columns, complexity metrics | beta |
@@ -117,7 +128,7 @@ printf '%s\n%s\n%s\n' \
   | pdf-inspector-mcp
 ```
 
-The same pattern works for any of the 13 tools. Two more one-liners (drop in
+The same pattern works for any of the 16 tools. Two more one-liners (drop in
 the `printf` block above, replacing the third line):
 
 ```text
@@ -152,7 +163,7 @@ the upstream surface.
         |
         | JSON-RPC over stdio (MCP)
         v
-  pdf-inspector-mcp        (rmcp 2.2 server)
+  pdf-inspector-mcp        (rmcp 3.1 server)
         |
         v
   pdf-inspector-skillkit   (facade lib)
@@ -162,7 +173,7 @@ the upstream surface.
    |       +-- domain::irc      (parse_irc_sections)
    |       +-- domain::sweet    (demo review packages + comparisons)
    v
-  pdf-inspector             (upstream, SHA-pinned)
+  pdf-inspector 1.17.0 (released, exact lock resolution)
 ```
 
 ## Development

@@ -50,6 +50,20 @@ jobs:
       - name: cargo build (release)
         run: cargo build --workspace --release --locked
 
+  containment:
+    name: worker containment (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run worker containment tests
+        run: cargo test -p pdf-inspector-mcp --test document_tool --locked
+
   deny:
     name: cargo-deny (advisories + licenses + bans + sources)
     runs-on: ubuntu-latest

@@ -6,9 +6,14 @@ members = [
 ]
 
 [workspace.dependencies]
-pdf-inspector = { git = "https://github.com/firecrawl/pdf-inspector", rev = "2f23f07f6e38fd341361554c114d1abe36349ce7" }
+pdf-inspector = "=1.17.0"
+anydoc = "=0.2.4"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+tempfile = "3"
+libc = "0.2"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 thiserror = "2"
+quick-xml = "0.41.0"
