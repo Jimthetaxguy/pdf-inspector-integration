@@ -377,6 +377,17 @@ mod tests {
     }
 
     #[test]
+    fn converts_public_bank_export_fixture() {
+        let markdown = to_markdown(include_bytes!(
+            "../../../test-corpus/csv/public-bank-export.csv"
+        ))
+        .expect("public CSV fixture must satisfy the strict adapter contract");
+        assert!(markdown.contains(r"Customer receipt \| January"));
+        assert!(markdown.contains("1250.00"));
+        assert!(markdown.contains("-275.50"));
+    }
+
+    #[test]
     fn sniffs_semicolon_and_preserves_multiline_fields_as_one_cell() {
         let markdown =
             to_markdown(b"Date;Memo;Amount\n2026-01-01;\"line one\nline two\";12\n").unwrap();
