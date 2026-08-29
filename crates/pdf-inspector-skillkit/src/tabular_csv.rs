@@ -13,7 +13,7 @@ const MAX_ROWS: usize = 100_000;
 const MAX_COLUMNS: usize = 4_096;
 const MAX_FIELD_BYTES: usize = 1_048_576;
 const MAX_SAMPLE_ROWS: usize = 32;
-const DELIMITERS: [u8; 4] = [b',', b';', b'\t', b'|'];
+const DELIMITERS: [u8; 4] = *b",;\t|";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParseError {
