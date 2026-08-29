@@ -1,4 +1,4 @@
 Date,Account,Description,Amount
-2026-01-02,Operating,\"Customer receipt | January\",1250.00
+2026-01-02,Operating,"Customer receipt | January",1250.00
 2026-01-03,Operating,Transfer from reserve,500.00
 2026-01-04,Payroll,Payroll tax remittance,-275.50
