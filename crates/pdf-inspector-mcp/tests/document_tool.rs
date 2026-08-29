@@ -175,8 +175,16 @@ fn epub_external_reference_is_rejected_before_any_network_access() {
         package.to_string_lossy().into_owned(),
         "epub-network-canary-test",
     );
-    assert_eq!(document["code"], "unsupported");
-    assert_eq!(document["error"], "document format is not enabled");
+    if cfg!(target_os = "linux") {
+        assert_eq!(document["code"], "incomplete_conversion");
+        assert_eq!(
+            document["error"],
+            "document conversion omitted required content"
+        );
+    } else {
+        assert_eq!(document["code"], "unsupported");
+        assert_eq!(document["error"], "document format is not enabled");
+    }
     assert!(!document.to_string().contains("127.0.0.1"));
 
     listener

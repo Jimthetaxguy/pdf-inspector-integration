@@ -44,6 +44,10 @@ const MAX_IN_FLIGHT_WORKERS: usize = 2;
 const MAX_ARCHIVE_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_ARCHIVE_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_PREFLIGHT_PART_BYTES: u64 = 4 * 1024 * 1024;
+// JSON can encode each control byte in a Markdown string as a six-byte
+// control-character escape. Keep the IPC frame bound independent of the 8 MiB
+// public Markdown contract and leave room for the typed response envelope.
+const MAX_SERIALIZED_WORKER_RESPONSE_BYTES: usize = MAX_MARKDOWN_SIZE * 6 + 4096;
 #[cfg(target_os = "linux")]
 const MAX_WORKER_MEMORY_BYTES: u64 = 1024 * 1024 * 1024;
 
@@ -1241,6 +1245,50 @@ fn xml_element_tags<'a>(xml: &'a str, element_name: &str) -> Vec<&'a str> {
     tags
 }
 
+fn ooxml_external_target(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
+    value.starts_with("//")
+        || value.starts_with("http:")
+        || value.starts_with("https:")
+        || value.starts_with("ftp:")
+        || value.starts_with("file:")
+        || value.starts_with("data:")
+        || value.starts_with("javascript:")
+        || value.starts_with("mailto:")
+}
+
+fn xml_has_ooxml_external_relationship(bytes: &[u8]) -> bool {
+    if !xml_is_well_formed(bytes) {
+        return false;
+    }
+    let mut reader = quick_xml::Reader::from_reader(Cursor::new(bytes));
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(quick_xml::events::Event::Start(event))
+            | Ok(quick_xml::events::Event::Empty(event))
+                if xml_local_name(event.name().as_ref()).eq_ignore_ascii_case(b"Relationship") =>
+            {
+                let external = event.attributes().flatten().any(|attribute| {
+                    let name = xml_local_name(attribute.key.as_ref());
+                    let value = String::from_utf8_lossy(attribute.value.as_ref());
+                    (name.eq_ignore_ascii_case(b"TargetMode")
+                        && value.trim().eq_ignore_ascii_case("External"))
+                        || (name.eq_ignore_ascii_case(b"Target") && ooxml_external_target(&value))
+                });
+                if external {
+                    return true;
+                }
+                buffer.clear();
+            }
+            Ok(quick_xml::events::Event::Eof) => return false,
+            Ok(_) => buffer.clear(),
+            Err(_) => return false,
+        }
+    }
+}
+
 fn xml_attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     for quote in ['"', '\''] {
         let marker = format!("{name}={quote}");
@@ -1337,7 +1385,12 @@ struct EpubManifestItem {
     properties: String,
 }
 
-type EpubPackageMetadata = (HashMap<String, EpubManifestItem>, Vec<String>, bool);
+struct EpubPackageMetadata {
+    manifest: HashMap<String, EpubManifestItem>,
+    spine: Vec<String>,
+    incomplete: bool,
+    nav_item_id: Option<String>,
+}
 
 fn epub_is_external_uri(value: &str) -> bool {
     let value = value.trim().to_ascii_lowercase();
@@ -1444,11 +1497,23 @@ fn epub_parse_opf(bytes: &[u8]) -> Result<EpubPackageMetadata, DocumentError> {
     let mut manifest = HashMap::new();
     let mut spine = Vec::new();
     let mut incomplete = false;
+    let mut package_seen = false;
     loop {
         match reader.read_event_into(&mut buffer) {
             Ok(quick_xml::events::Event::Start(event))
             | Ok(quick_xml::events::Event::Empty(event)) => {
                 match xml_local_name(event.name().as_ref()) {
+                    b"package" => {
+                        if package_seen {
+                            return Err(DocumentError::Malformed);
+                        }
+                        package_seen = true;
+                        let version = xml_attribute_value(&event, b"version")
+                            .ok_or(DocumentError::Malformed)?;
+                        if version.trim().split('.').next() != Some("3") {
+                            return Err(DocumentError::Unsupported);
+                        }
+                    }
                     b"item" => {
                         let id =
                             xml_attribute_value(&event, b"id").ok_or(DocumentError::Malformed)?;
@@ -1484,7 +1549,28 @@ fn epub_parse_opf(bytes: &[u8]) -> Result<EpubPackageMetadata, DocumentError> {
                 buffer.clear();
             }
             Ok(quick_xml::events::Event::Eof) => {
-                return Ok((manifest, spine, incomplete));
+                if !package_seen {
+                    return Err(DocumentError::Malformed);
+                }
+                let nav_items = manifest
+                    .iter()
+                    .filter(|(_, item)| {
+                        item.properties
+                            .split_whitespace()
+                            .any(|property| property.eq_ignore_ascii_case("nav"))
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>();
+                let nav_item_id = (nav_items.len() == 1).then(|| nav_items[0].clone());
+                if nav_items.len() != 1 {
+                    incomplete = true;
+                }
+                return Ok(EpubPackageMetadata {
+                    manifest,
+                    spine,
+                    incomplete,
+                    nav_item_id,
+                });
             }
             Ok(_) => buffer.clear(),
             Err(_) => return Err(DocumentError::Malformed),
@@ -1754,7 +1840,12 @@ fn preflight_epub(bytes: &[u8]) -> Result<PackagePreflight, DocumentError> {
         return Err(DocumentError::Malformed);
     }
     let opf = epub_read_part(&mut archive, &opf_path)?;
-    let (manifest, spine, opf_incomplete) = epub_parse_opf(&opf)?;
+    let EpubPackageMetadata {
+        manifest,
+        spine,
+        incomplete: opf_incomplete,
+        nav_item_id,
+    } = epub_parse_opf(&opf)?;
     let mut result = PackagePreflight {
         missing_required_content: opf_incomplete,
         ..Default::default()
@@ -1828,11 +1919,8 @@ fn preflight_epub(bytes: &[u8]) -> Result<PackagePreflight, DocumentError> {
             Err(error) => return Err(error),
         }
     }
-    if let Some(nav_item) = manifest.values().find(|item| {
-        item.properties
-            .split_whitespace()
-            .any(|property| property.eq_ignore_ascii_case("nav"))
-    }) {
+    if let Some(nav_item_id) = nav_item_id {
+        let nav_item = manifest.get(&nav_item_id).ok_or(DocumentError::Malformed)?;
         if !nav_item
             .media_type
             .eq_ignore_ascii_case("application/xhtml+xml")
@@ -2103,10 +2191,8 @@ fn preflight_package(
                     }
                 }
             }
-            if lower_content.contains(r#"targetmode="external"#)
-                || (lower_content.contains("external") && lower_name.contains("externallink"))
-            {
-                result.external_relationships = true;
+            if lower_name.ends_with(".rels") {
+                result.external_relationships |= xml_has_ooxml_external_relationship(&content);
             }
             if lower_content.contains("macroenabled") {
                 result.active_content = true;
@@ -2501,7 +2587,7 @@ async fn worker_exchange(
             .try_into()
             .map_err(|_| DocumentError::WorkerProtocol)?,
     );
-    if response_len > (MAX_MARKDOWN_SIZE as u64 * 2) {
+    if response_len > MAX_SERIALIZED_WORKER_RESPONSE_BYTES as u64 {
         return Err(DocumentError::OutputTooLarge);
     }
     let mut response = vec![0u8; response_len as usize];
@@ -3024,9 +3110,15 @@ fn write_worker_response<W: Write>(
         }
     }
     let payload = serde_json::to_vec(&value).map_err(|_| DocumentError::WorkerProtocol)?;
-    if payload.len() > MAX_MARKDOWN_SIZE * 2 {
-        return Err(DocumentError::OutputTooLarge);
-    }
+    let payload = if payload.len() > MAX_SERIALIZED_WORKER_RESPONSE_BYTES {
+        // Preserve a parseable frame so the supervisor can return the stable
+        // output_too_large code instead of turning an oversized JSON envelope
+        // into a misleading worker_protocol error.
+        serde_json::to_vec(&worker_response_for_error(&DocumentError::OutputTooLarge))
+            .map_err(|_| DocumentError::WorkerProtocol)?
+    } else {
+        payload
+    };
     output
         .write_all(&PROTOCOL_MAGIC)
         .and_then(|_| output.write_all(&[PROTOCOL_VERSION, 0, 0, 0]))
@@ -3093,6 +3185,24 @@ mod tests {
         assert_eq!(
             DocumentError::OcrRequired { pages: vec![1] }.code(),
             "needs_ocr"
+        );
+    }
+
+    #[test]
+    fn worker_frame_bound_covers_worst_case_json_escaping() {
+        let response = WorkerResponse {
+            markdown: Some("\0".repeat(MAX_MARKDOWN_SIZE)),
+            ..Default::default()
+        };
+        let mut frame = Vec::new();
+        write_worker_response(&mut frame, response).expect("bounded worker frame");
+        let payload = &frame[FRAME_HEADER_BYTES..];
+        assert!(payload.len() > MAX_MARKDOWN_SIZE * 2);
+        assert!(payload.len() <= MAX_SERIALIZED_WORKER_RESPONSE_BYTES);
+        let decoded: WorkerResponse = serde_json::from_slice(payload).expect("worker JSON");
+        assert_eq!(
+            decoded.markdown.expect("Markdown response").len(),
+            MAX_MARKDOWN_SIZE
         );
     }
     const DOCX_TYPES: &[u8] = br#"<Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
@@ -3225,6 +3335,19 @@ mod tests {
         ]);
         let result = preflight_package(&bytes, DocumentKind::Docx, DocumentVariant::Docx).unwrap();
         assert!(result.external_relationships);
+    }
+
+    #[test]
+    fn ooxml_relationship_parser_handles_spacing_and_arbitrary_external_targets() {
+        assert!(xml_has_ooxml_external_relationship(
+            br#"<Relationships><Relationship Id='rId1' TargetMode = 'External' Target='slide-link.bin'/></Relationships>"#
+        ));
+        assert!(xml_has_ooxml_external_relationship(
+            br#"<Relationships><Relationship Id="rId2" Target="https://example.invalid/image.png"/></Relationships>"#
+        ));
+        assert!(!xml_has_ooxml_external_relationship(
+            br#"<Relationships><Relationship Id="rId3" Target="slides/slide1.xml"/></Relationships>"#
+        ));
     }
 
     #[test]
@@ -3659,9 +3782,45 @@ mod tests {
     }
 
     const EPUB_CONTAINER: &[u8] = br#"<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#;
-    const EPUB_OPF: &[u8] = br#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0"><metadata><dc:title>Public EPUB</dc:title></metadata><manifest><item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/><item id="ch2" href="Text/ch2.xhtml" media-type="application/xhtml+xml"/><item id="logo" href="images/logo.png" media-type="image/png"/></manifest><spine><itemref idref="ch1"/><itemref idref="ch2"/></spine></package>"#;
+    const EPUB_OPF: &[u8] = br#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0"><metadata><dc:title>Public EPUB</dc:title></metadata><manifest><item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/><item id="ch2" href="Text/ch2.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="logo" href="images/logo.png" media-type="image/png"/></manifest><spine><itemref idref="ch1"/><itemref idref="ch2"/></spine></package>"#;
+    const EPUB_NAV: &[u8] = br#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head/><body><nav type="toc"><ol><li><a href="Text/ch1.xhtml">Chapter One</a></li><li><a href="Text/ch2.xhtml">Chapter Two</a></li></ol></nav></body></html>"#;
     const EPUB_CHAPTER_ONE: &[u8] = br#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head/><body><h1>Chapter One</h1><p>First public chapter.<img src="../images/logo.png" alt="Public logo"/></p></body></html>"#;
     const EPUB_CHAPTER_TWO: &[u8] = br#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head/><body><h1>Chapter Two</h1><p>Second public chapter.</p></body></html>"#;
+
+    #[test]
+    fn epub_preflight_rejects_epub2_before_conversion() {
+        let epub2_opf = br#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata/><manifest><item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="ch1"/></spine></package>"#;
+        let bytes = epub_package_for_opf(epub2_opf, EPUB_CHAPTER_ONE);
+        let actual = preflight_package(&bytes, DocumentKind::Epub, DocumentVariant::Epub);
+        assert!(matches!(actual, Err(DocumentError::Unsupported)));
+    }
+
+    #[test]
+    fn epub_preflight_requires_one_epub3_navigation_document() {
+        let epub3_without_nav = br#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/><manifest><item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="ch1"/></spine></package>"#;
+        let bytes = epub_package_for_opf(epub3_without_nav, EPUB_CHAPTER_ONE);
+        let result = preflight_package(&bytes, DocumentKind::Epub, DocumentVariant::Epub).unwrap();
+        assert!(result.missing_required_content);
+    }
+
+    fn epub_package_for_opf(opf: &[u8], chapter: &[u8]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("mimetype", stored).unwrap();
+        writer.write_all(b"application/epub+zip").unwrap();
+        for (name, bytes) in [
+            ("META-INF/container.xml", EPUB_CONTAINER),
+            ("OPS/package.opf", opf),
+            ("OPS/Text/ch1.xhtml", chapter),
+        ] {
+            writer
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
 
     fn epub_package(
         chapter_one: &[u8],
@@ -3676,6 +3835,7 @@ mod tests {
         for (name, bytes) in [
             ("META-INF/container.xml", EPUB_CONTAINER),
             ("OPS/package.opf", EPUB_OPF),
+            ("OPS/nav.xhtml", EPUB_NAV),
             ("OPS/Text/ch1.xhtml", chapter_one),
         ] {
             writer
@@ -3800,7 +3960,7 @@ mod tests {
     #[test]
     fn public_epub_corpus_matches_containment_oracle() {
         let complete = preflight_package(
-            include_bytes!("../../../test-corpus/epub/public-longform.epub"),
+            include_bytes!("../../../test-corpus/epub/public-spine-order.epub"),
             DocumentKind::Epub,
             DocumentVariant::Epub,
         )
@@ -3809,6 +3969,14 @@ mod tests {
         assert!(!complete.external_relationships);
         assert!(!complete.hidden_content);
         assert!(!complete.missing_required_content);
+
+        let legacy_without_navigation = preflight_package(
+            include_bytes!("../../../test-corpus/epub/public-longform.epub"),
+            DocumentKind::Epub,
+            DocumentVariant::Epub,
+        )
+        .unwrap();
+        assert!(legacy_without_navigation.missing_required_content);
 
         let missing = preflight_package(
             include_bytes!("../../../test-corpus/epub/missing-chapter.epub"),
@@ -3833,7 +4001,7 @@ mod tests {
         )
         .unwrap();
         assert!(external.external_relationships);
-        assert!(!external.missing_required_content);
+        assert!(external.missing_required_content);
 
         let hidden = preflight_package(
             include_bytes!("../../../test-corpus/epub/hidden-content.epub"),
@@ -3869,10 +4037,11 @@ mod tests {
         let roots = epub_rootfile_paths(&container).unwrap();
         let opf_path = resolve_package_target("", &roots[0]).unwrap();
         let opf = epub_read_part(&mut archive, &opf_path).unwrap();
-        let (manifest, spine, _) = epub_parse_opf(&opf).unwrap();
-        spine
+        let metadata = epub_parse_opf(&opf).unwrap();
+        metadata
+            .spine
             .iter()
-            .filter_map(|idref| manifest.get(idref))
+            .filter_map(|idref| metadata.manifest.get(idref))
             .filter_map(|item| epub_resolve_local(&opf_path, &item.href))
             .map(|target| {
                 String::from_utf8(epub_read_part(&mut archive, &target).unwrap()).unwrap()

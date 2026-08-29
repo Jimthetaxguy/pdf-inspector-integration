@@ -522,12 +522,20 @@ impl ServerHandler for PdfInspectorServer {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     if std::env::args().nth(1).as_deref() == Some("--anydoc-worker") {
+        // The worker is synchronous. Avoid constructing Tokio before the
+        // Linux supervisor applies the worker address-space ceiling.
         return pdf_inspector_skillkit::document::run_worker().map_err(anyhow::Error::from);
     }
 
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async_main())
+}
+
+async fn async_main() -> anyhow::Result<()> {
     // CRITICAL: stdout is the MCP JSON-RPC channel. All logs MUST go to stderr
     // or the protocol breaks. Dependency logs stay disabled because protocol
     // libraries can include full request arguments in debug events. The
